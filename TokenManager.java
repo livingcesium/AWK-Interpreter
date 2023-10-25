@@ -17,6 +17,14 @@ public class TokenManager {
             return Optional.empty();
         }
     }
+    public boolean isTypeAhead(Token.TokenType type, int i){
+        Optional<Token> token;
+        if((token = peek(i)).isPresent()){
+            return token.get().isType(type);
+        }
+        return false;
+    }
+    
     public boolean moreTokens(){
         return !tokens.isEmpty();
     }

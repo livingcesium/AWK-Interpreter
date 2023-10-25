@@ -281,7 +281,7 @@ public class ParserTest {
                                 i = 1
                                 while (i <= 2) {
                                     for (j = 1; j <= 3; j++) {
-                                        print( "i:", i, "j:", j)
+                                        print "i:", i, "j:", j
                                     }
                                     i++
                                 }

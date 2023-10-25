@@ -887,7 +887,12 @@ public class Parser {
         if(type == null)
             return Optional.empty();
         
-        return parseFunctionCall(type.toString().toLowerCase());
+        if(tokens.isTypeAhead(Token.TokenType.LEFTPAREN, 1))
+            return parseFunctionCall(type.toString().toLowerCase());
+        
+        LinkedList<Node> arguments = getArguments();
+
+        return Optional.of(new FunctionCallNode(type.toString().toLowerCase(), arguments));
         
     }
     
@@ -898,22 +903,28 @@ public class Parser {
         if(tokens.matchAndRemove(Token.TokenType.LEFTPAREN).isEmpty())
             return Optional.empty();
         
-        Optional<Node> argument;
-        LinkedList<Node> arguments = new LinkedList<>();
-        do {
-            if((argument = parseOperation()).isEmpty()) {
-                if(arguments.isEmpty()) // First argument is empty, so we have no args
-                    break;
-                throw new RuntimeException(String.format("Could not parse argument for function call, reached %s", reportPosition()));
-            }
-            arguments.add(argument.get());
-        } while(tokens.matchAndRemove(Token.TokenType.COMMA).isPresent());
+        LinkedList<Node> arguments = getArguments();
         
         if(tokens.matchAndRemove(Token.TokenType.RIGHTPAREN).isEmpty())
             throw new RuntimeException(String.format("Expected \")\" after function call, reached %s", reportPosition()));
         
         acceptSeperators();
         return Optional.of(new FunctionCallNode(name, arguments));
+    }
+    
+    private LinkedList<Node> getArguments(){
+        Optional<Node> argument;
+        LinkedList<Node> arguments = new LinkedList<>();
+        do {
+            if((argument = parseOperation()).isEmpty()) {
+                if(arguments.isEmpty()) // First argument is empty, so we have no args
+                    break;
+                throw new RuntimeException(String.format("Could not parse argument, reached %s", reportPosition()));
+            }
+            arguments.add(argument.get());
+        } while(tokens.matchAndRemove(Token.TokenType.COMMA).isPresent());
+
+        return arguments;
     }
     private Optional<Node> parseLvalue(){
         if(!tokens.moreTokens())
