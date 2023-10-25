@@ -1,0 +1,8 @@
+ProgramNode
+Begin:
+End:
+Other:
+Functions:
+	function func(a, b) {
+		
+	}

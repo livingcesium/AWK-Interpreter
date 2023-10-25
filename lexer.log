@@ -1,0 +1,1 @@
+[SEPERATOR at [1, 1], FUNCTION (function) at [2, 8], WORD (func) at [2, 13], LEFTPAREN (() at [2, 14], WORD (a) at [2, 15], COMMA (,) at [2, 16], WORD (b) at [2, 18], RIGHTPAREN ()) at [2, 19], LEFTBRACE ({) at [2, 20], SEPERATOR at [2, 21], RIGHTBRACE (}) at [3, 1], SEPERATOR at [3, 2]]
