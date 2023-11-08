@@ -1,6 +1,5 @@
 import org.junit.Test;
 
-import javax.swing.plaf.nimbus.State;
 import java.util.*;
 
 import static org.junit.Assert.*;
@@ -247,7 +246,7 @@ public class ParserTest {
         ));
         
         LinkedList<StatementNode> whileNodes = new LinkedList<>(List.of(
-                new ASTnodes.ForNode(
+                new ASTnode.ForNode(
                         new AssignmentNode(new VariableReferenceNode("j"), new ConstantNode<Double>(1.0)),
                         new OperationNode(new VariableReferenceNode("j"), OperationNode.Operation.LESSOREQUAL, new ConstantNode<Double>(3.0)),
                         new AssignmentNode(new VariableReferenceNode("j"), new OperationNode(new VariableReferenceNode("j"), OperationNode.Operation.POSTINCREMENT)),
@@ -259,7 +258,7 @@ public class ParserTest {
         
         LinkedList<StatementNode> ifNodes = new LinkedList<>(List.of(
                 new AssignmentNode(new VariableReferenceNode("i"), new ConstantNode<Double>(1.0)),
-                new ASTnodes.WhileNode(
+                new ASTnode.WhileNode(
                         new OperationNode(new VariableReferenceNode("i"), OperationNode.Operation.LESSOREQUAL, new ConstantNode<Double>(2.0)),
                         new BlockNode(whileNodes)
                 )
@@ -267,7 +266,7 @@ public class ParserTest {
         
         statements = new LinkedList<>(List.of(
                 new AssignmentNode(new VariableReferenceNode("value"), new ConstantNode<Double>(6.0)),
-                new ASTnodes.IfNode(
+                new ASTnode.IfNode(
                         new OperationNode(new VariableReferenceNode("value"), OperationNode.Operation.GREATERTHAN, new ConstantNode<Double>(5.0)),
                         new BlockNode(ifNodes)
                 )
@@ -306,12 +305,12 @@ public class ParserTest {
         ));
         statements = new LinkedList<>(List.of(
                 new AssignmentNode(new VariableReferenceNode("arr", new ConstantNode<String>("a")), new ConstantNode<Double>(1.0)),
-                new ASTnodes.IfNode(
+                new ASTnode.IfNode(
                         new OperationNode(new ConstantNode<String>("a"), OperationNode.Operation.IN, new VariableReferenceNode("arr")),
                         new BlockNode(ifNodes),
-                        new ASTnodes.IfNode(new BlockNode(elseNodes))
+                        new ASTnode.IfNode(new BlockNode(elseNodes))
                 ),
-                new ASTnodes.ForNode(
+                new ASTnode.ForNode(
                         new VariableReferenceNode("key"),
                         new VariableReferenceNode("arr"),
                         new BlockNode(forNodes)

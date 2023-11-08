@@ -20,4 +20,20 @@ public class TernaryNode extends Node {
         if(!trueCase.equals(that.trueCase)) return false;
         return falseCase.equals(that.falseCase);
     }
+    
+    public String toString(){
+        return String.format("TernaryNode: %s ? %s : %s", condition, trueCase, falseCase);
+    }
+    
+    public Node getCondition(){
+        return condition;
+    }
+    
+    public Node getTrueCase(){
+        return trueCase;
+    }
+    
+    public Node getFalseCase(){
+        return falseCase;
+    }
 }

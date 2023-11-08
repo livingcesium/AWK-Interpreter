@@ -191,6 +191,15 @@ public class Lexer {
         knownWords.put("function", Token.TokenType.FUNCTION);
         knownWords.put("from", Token.TokenType.FROM);
         knownWords.put("to", Token.TokenType.TO);
+        knownWords.put("gsub", Token.TokenType.GSUB);
+        knownWords.put("sub", Token.TokenType.SUB);
+        knownWords.put("match", Token.TokenType.MATCHFUNC);
+        knownWords.put("index", Token.TokenType.INDEX);
+        knownWords.put("length", Token.TokenType.LENGTH);
+        knownWords.put("substr", Token.TokenType.SUBSTR);
+        knownWords.put("tolower", Token.TokenType.TOLOWER);
+        knownWords.put("toupper", Token.TokenType.TOUPPER);
+        
     }
 
     private void populateKnownSymbols() {

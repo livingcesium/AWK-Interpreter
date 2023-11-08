@@ -25,6 +25,14 @@ public class AssignmentNode extends VariableReferenceNode implements StatementNo
             return assignedTo.equals(that.assignedTo);
     }
     
+    public VariableReferenceNode getTarget(){
+        return target;
+    }
+    
+    public Node getAssignedTo(){
+        return assignedTo;
+    }
+    
     public String toString(){
         return String.format("AssignmentNode: %s = %s", target, assignedTo);
     }

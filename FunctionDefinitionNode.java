@@ -1,22 +1,33 @@
-import java.util.LinkedList;
-import java.util.Iterator;
+import java.util.*;
+import java.util.function.Function;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class FunctionDefinitionNode extends Node{
     private String name;
     private LinkedList<String> parameterNames;
+    protected LinkedList<LinkedList<String>> acceptedParameterNames = new LinkedList<>(); // For overloaded functions
     private LinkedList<StatementNode> statements;
     
-    public FunctionDefinitionNode(String name, LinkedList<StatementNode> statements, LinkedList<String> parameterNames){
+    public FunctionDefinitionNode(String name, LinkedList<StatementNode> statements, List<String> parameterNames){
         this.name = name;
-        this.parameterNames = parameterNames;
+        this.parameterNames = new LinkedList<>(parameterNames);
         this.statements = statements;
+        
+        acceptedParameterNames.add(new LinkedList<>(parameterNames));
     }
 
-    public FunctionDefinitionNode(String name, LinkedList<StatementNode> statements){
+    public FunctionDefinitionNode(String name, LinkedList<StatementNode> statements){ // No parameters
         this.name = name;
         this.statements = statements;
+        this.parameterNames = new LinkedList<String>();
+        
+        acceptedParameterNames.add(new LinkedList<>(parameterNames));
     }
-
+    
+    public String getName(){
+        return name;
+    }
     @Override
     public String toString() {
         if(parameterNames == null)
@@ -39,4 +50,16 @@ public class FunctionDefinitionNode extends Node{
         }
         return builder.toString();
     }
+
+    // Add new parameter names to the list of accepted parameter names, only used by built-in functions.
+    protected void overload(List<String> parameterNames){ 
+        acceptedParameterNames.add(new LinkedList<>(parameterNames));
+    }
+    public LinkedList<String> getParameterNames(){
+        return parameterNames;
+    }
+    
+    
+    
+    
 }

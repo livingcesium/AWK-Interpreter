@@ -22,7 +22,7 @@ public class VariableReferenceNode extends Node{
         return name;
     }
     
-    public Optional<Node> getindex(){
+    public Optional<Node> getIndex(){
         return index;
     }
 

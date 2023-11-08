@@ -2,26 +2,32 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
-public abstract class ASTnodes extends Node implements StatementNode{
+public abstract class ASTnode extends Node implements StatementNode{
     
     protected Node condition;
     protected BlockNode statements;
     
-    ASTnodes(){
+    ASTnode(){
         this.condition = new ConstantNode<Boolean>(true);
         this.statements = null;
     }
-    ASTnodes(BlockNode statements){
+    ASTnode(BlockNode statements){
         this.condition = new ConstantNode<Boolean>(true);
         this.statements = statements;
     }
-    ASTnodes(Node condition, BlockNode statements){
+    ASTnode(Node condition, BlockNode statements){
         this.condition = condition;
         this.statements = statements;
     }
     
+    public Node getCondition(){
+        return condition;
+    }
     
-    public static class IfNode extends ASTnodes {
+    public BlockNode getStatements(){
+        return statements;
+    }
+    public static class IfNode extends ASTnode {
         private Optional<IfNode> elseNode = Optional.empty();
         
         IfNode(BlockNode statements) {
@@ -61,7 +67,7 @@ public abstract class ASTnodes extends Node implements StatementNode{
         }
     }
     
-    public static class WhileNode extends ASTnodes {
+    public static class WhileNode extends ASTnode {
         
         boolean doWhile = false;
         WhileNode(Node condition, BlockNode statements) {
@@ -89,7 +95,7 @@ public abstract class ASTnodes extends Node implements StatementNode{
         }
     }
     
-    public static class ForNode extends ASTnodes {
+    public static class ForNode extends ASTnode {
         private Node init;
         private Node update;
         private boolean forIn = false;
@@ -132,7 +138,7 @@ public abstract class ASTnodes extends Node implements StatementNode{
         
     }
     
-    public static class ContinueNode extends ASTnodes {
+    public static class ContinueNode extends ASTnode {
         ContinueNode() {
             super();
         }
@@ -150,7 +156,7 @@ public abstract class ASTnodes extends Node implements StatementNode{
         }
     }
     
-    public static class BreakNode extends ASTnodes {
+    public static class BreakNode extends ASTnode {
         BreakNode() {
             super();
         }
@@ -168,7 +174,7 @@ public abstract class ASTnodes extends Node implements StatementNode{
         }
     }
     
-    public static class DeleteNode extends ASTnodes {
+    public static class DeleteNode extends ASTnode {
         VariableReferenceNode target;
         Collection<Node> indices;
         
@@ -198,7 +204,7 @@ public abstract class ASTnodes extends Node implements StatementNode{
         }
     }
     
-    public static class ReturnNode extends ASTnodes {
+    public static class ReturnNode extends ASTnode {
         Node value;
         public ReturnNode(Node value) {
             super();

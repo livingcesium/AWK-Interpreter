@@ -1,4 +1,3 @@
-import javax.swing.plaf.nimbus.State;
 import java.util.*;
 
 public class Parser {
@@ -194,13 +193,13 @@ public class Parser {
         if(tokens.matchAndRemove(Token.TokenType.CONTINUE).isEmpty())
             return Optional.empty();
         acceptSeperators();
-        return Optional.of(new ASTnodes.ContinueNode());
+        return Optional.of(new ASTnode.ContinueNode());
     }
     private Optional<StatementNode> parseBreak(){
         if(tokens.matchAndRemove(Token.TokenType.BREAK).isEmpty())
             return Optional.empty();
         acceptSeperators();
-        return Optional.of(new ASTnodes.BreakNode());
+        return Optional.of(new ASTnode.BreakNode());
     }
     private Optional<StatementNode> parseDelete(){
         if(tokens.matchAndRemove(Token.TokenType.DELETE).isEmpty())
@@ -211,7 +210,7 @@ public class Parser {
             throw new RuntimeException(String.format("Expected variable name after \"delete\", reached %s", reportPosition()));
         
         if(tokens.matchAndRemove(Token.TokenType.LEFTBRACKET).isEmpty())
-            return Optional.of(new ASTnodes.DeleteNode(new VariableReferenceNode(nameToken.get().getValue())));
+            return Optional.of(new ASTnode.DeleteNode(new VariableReferenceNode(nameToken.get().getValue())));
         
         Optional<Node> index;
         LinkedList<Node> indices = new LinkedList<>();
@@ -222,7 +221,7 @@ public class Parser {
         } while(tokens.matchAndRemove(Token.TokenType.COMMA).isPresent());
         
         acceptSeperators();
-        return Optional.of(new ASTnodes.DeleteNode(new VariableReferenceNode(nameToken.get().getValue()), indices));
+        return Optional.of(new ASTnode.DeleteNode(new VariableReferenceNode(nameToken.get().getValue()), indices));
     }
     
     private Optional<StatementNode> parseReturn(){
@@ -234,7 +233,7 @@ public class Parser {
             throw new RuntimeException(String.format("Could not parse return value, reached %s", reportPosition()));
         
         acceptSeperators();
-        return Optional.of(new ASTnodes.ReturnNode(value.get()));
+        return Optional.of(new ASTnode.ReturnNode(value.get()));
     }
     private Optional<StatementNode> parseFor(){
         if(tokens.matchAndRemove(Token.TokenType.FOR).isEmpty())
@@ -266,7 +265,7 @@ public class Parser {
             acceptSeperators();
 
             statements = parseBlock();
-            return Optional.of(new ASTnodes.ForNode(membership.getLeft(), membership.getRight().get(), statements)); // Freebie get() here should be safe
+            return Optional.of(new ASTnode.ForNode(membership.getLeft(), membership.getRight().get(), statements)); // Freebie get() here should be safe
         } else {
             Optional<Node> init;
             Optional<Node> condition;
@@ -288,7 +287,7 @@ public class Parser {
             acceptSeperators();
 
             statements = parseBlock();
-            return Optional.of(new ASTnodes.ForNode(init.get(), condition.get(), update.get(), statements));
+            return Optional.of(new ASTnode.ForNode(init.get(), condition.get(), update.get(), statements));
         }
     }
     
@@ -312,7 +311,7 @@ public class Parser {
             throw new RuntimeException(String.format("Expected \")\" after condition for do-while loop, reached %s", reportPosition()));
         acceptSeperators();
         
-        return Optional.of(new ASTnodes.WhileNode(condition.get(), statements, true));
+        return Optional.of(new ASTnode.WhileNode(condition.get(), statements, true));
     }
     private Optional<StatementNode> parseWhile(){
         if(tokens.matchAndRemove(Token.TokenType.WHILE).isEmpty())
@@ -331,7 +330,7 @@ public class Parser {
         
         BlockNode statements = parseBlock();
 
-        return Optional.of(new ASTnodes.WhileNode(condition.get(), statements));
+        return Optional.of(new ASTnode.WhileNode(condition.get(), statements));
         
             
     }
@@ -345,19 +344,19 @@ public class Parser {
         BlockNode statements = parseBlock();
         
         
-        ASTnodes.IfNode ifNode = new ASTnodes.IfNode(condition.get(), statements);
-        ASTnodes.IfNode elseNode;
+        ASTnode.IfNode ifNode = new ASTnode.IfNode(condition.get(), statements);
+        ASTnode.IfNode elseNode;
         
         Optional<Node> nextCondition;
-        ASTnodes.IfNode currentNode = ifNode;
+        ASTnode.IfNode currentNode = ifNode;
         boolean finalElse = false;
         while(!finalElse && tokens.matchAndRemove(Token.TokenType.ELSE).isPresent()){
             
             nextCondition = getIfHeader();
             if(finalElse = nextCondition.isPresent()) // Save the result
-                elseNode = new ASTnodes.IfNode(nextCondition.get(), parseBlock());
+                elseNode = new ASTnode.IfNode(nextCondition.get(), parseBlock());
             else 
-                elseNode = new ASTnodes.IfNode(new ConstantNode<Boolean>(true), parseBlock());
+                elseNode = new ASTnode.IfNode(new ConstantNode<Boolean>(true), parseBlock());
             
             currentNode.setElse(elseNode);
             currentNode = elseNode;
@@ -874,7 +873,15 @@ public class Parser {
                 Token.TokenType.NEXT,
                 Token.TokenType.NEXTFILE,
                 Token.TokenType.GETLINE,
-                Token.TokenType.EXIT
+                Token.TokenType.EXIT,
+                Token.TokenType.GSUB,
+                Token.TokenType.MATCHFUNC,
+                Token.TokenType.SUB,
+                Token.TokenType.INDEX,
+                Token.TokenType.LENGTH,
+                Token.TokenType.SUBSTR,
+                Token.TokenType.TOLOWER,
+                Token.TokenType.TOUPPER
         ));
         Token.TokenType type = null;
         for(Token.TokenType t : typesToSeek){
@@ -887,11 +894,14 @@ public class Parser {
         if(type == null)
             return Optional.empty();
         
-        if(tokens.isTypeAhead(Token.TokenType.LEFTPAREN, 1))
-            return parseFunctionCall(type.toString().toLowerCase());
-        
+        boolean parenthesized = tokens.matchAndRemove(Token.TokenType.LEFTPAREN).isEmpty();
+
         LinkedList<Node> arguments = getArguments();
 
+        if(parenthesized && tokens.matchAndRemove(Token.TokenType.RIGHTPAREN).isEmpty())
+            throw new RuntimeException(String.format("Expected \")\" after function call, reached %s", reportPosition()));
+        acceptSeperators();
+        
         return Optional.of(new FunctionCallNode(type.toString().toLowerCase(), arguments));
         
     }
@@ -915,15 +925,18 @@ public class Parser {
     private LinkedList<Node> getArguments(){
         Optional<Node> argument;
         LinkedList<Node> arguments = new LinkedList<>();
-        do {
-            if((argument = parseOperation()).isEmpty()) {
-                if(arguments.isEmpty()) // First argument is empty, so we have no args
-                    break;
-                throw new RuntimeException(String.format("Could not parse argument, reached %s", reportPosition()));
-            }
-            arguments.add(argument.get());
-        } while(tokens.matchAndRemove(Token.TokenType.COMMA).isPresent());
 
+        if((argument = parseOperation()).isPresent()) // Add first argument if present
+            arguments.add(argument.get());
+        
+        if(!arguments.isEmpty()) // If we have one, loop for more
+            while(tokens.matchAndRemove(Token.TokenType.COMMA).isPresent()){
+                if((argument = parseOperation()).isEmpty()) {
+                    throw new RuntimeException(String.format("Could not parse argument, reached %s", reportPosition()));
+                }
+                arguments.add(argument.get());
+            }
+        
         return arguments;
     }
     private Optional<Node> parseLvalue(){

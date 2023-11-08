@@ -3,7 +3,7 @@ import java.util.Optional;
 
 public class BlockNode extends Node {
     private LinkedList<StatementNode> statements;
-    private Optional<Node> condition;
+    private Optional<Node> condition = Optional.empty();
     
     public BlockNode(LinkedList<StatementNode> statements, Node condition){
         this.statements = statements;
@@ -17,7 +17,10 @@ public class BlockNode extends Node {
     
     public BlockNode(LinkedList<StatementNode> statements){
         this.statements = statements;
-        this.condition = Optional.empty();
+    }
+    
+    public Optional<Node> getCondition(){
+        return condition;
     }
     
     public LinkedList<StatementNode> getStatements(){

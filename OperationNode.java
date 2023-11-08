@@ -68,6 +68,10 @@ public class OperationNode extends Node {
         return right;
     }
     
+    public Operation getOperation(){
+        return op;
+    }
+    
     public boolean isOp(Operation op){
         return this.op == op;
     }

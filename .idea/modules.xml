@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/parser4.iml" filepath="$PROJECT_DIR$/parser4.iml" />
+      <module fileurl="file://$PROJECT_DIR$/javAWK.iml" filepath="$PROJECT_DIR$/javAWK.iml" />
     </modules>
   </component>
 </project>

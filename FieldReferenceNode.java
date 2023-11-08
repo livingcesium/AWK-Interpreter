@@ -13,8 +13,7 @@ import java.util.Optional;
 // I chose to be explicit about variables in the tree so this is me sleeping in the grave I dug for myself lol
 public class FieldReferenceNode extends VariableReferenceNode{
     public static final String FIELD_VARIABLE_NAME = "@FIELD"; // @ used to make it clear this is a special variable name, not a user defined one
-
-
+    
     public FieldReferenceNode(Node index){
         super(FIELD_VARIABLE_NAME, index);
     }
@@ -28,7 +27,7 @@ public class FieldReferenceNode extends VariableReferenceNode{
     }
 
     public String toString(){
-        return String.format("FieldReferenceNode: $(%s)",super.getindex().orElseThrow());
+        return String.format("FieldReferenceNode: $(%s)",super.getIndex().orElseThrow());
     }
 
 }
