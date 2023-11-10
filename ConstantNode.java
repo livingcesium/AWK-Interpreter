@@ -5,8 +5,11 @@ public class ConstantNode<T> extends Node{
         this.value = value;
     }
     
-    public T getValue(){
-        return value;
+    public String getValue(){
+        if(value instanceof Boolean bool)
+        // Auto translate booleans to AWKs definition
+            return bool ? "1" : "0";
+        return value.toString();
     }
     
     

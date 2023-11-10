@@ -77,7 +77,7 @@ public class InterpreterTest {
         assertEquals(new InterpreterDataType("1"), result);
         
         // Test ternary
-        node = new TernaryNode(new ConstantNode<String>(""), new ConstantNode<Double>(1.0), new ConstantNode<Double>(2.0));
+        node = new TernaryNode(new ConstantNode<Boolean>(false), new ConstantNode<Double>(1.0), new ConstantNode<Double>(2.0));
         result = interpreter.getIDT(node, null);
         
         assertEquals(new InterpreterDataType("2.0"), result);

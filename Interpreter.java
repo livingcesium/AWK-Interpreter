@@ -654,7 +654,7 @@ public class Interpreter {
     }
     
     private InterpreterDataType evaluateConstant(ConstantNode<?> node){
-        return new InterpreterDataType(node.getValue().toString());
+        return new InterpreterDataType(node.getValue());
     }
     
     private void populateKnownFunctions(){
