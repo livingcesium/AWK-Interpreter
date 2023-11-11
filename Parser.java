@@ -253,19 +253,20 @@ public class Parser {
         Optional<StatementNode> forNode;
         BlockNode statements;
         if(forIn) {
-            Optional<Node> operation = parseOperation(); // should get to parseArrayMembership()
+            Optional<Node> operation = parseOperation(); // Should get to parseArrayMembership()
             if(operation.isEmpty())
                 throw new RuntimeException(String.format("Could not parse for-in array, reached %s", reportPosition()));
             OperationNode membership = operation.get().getOperationOrThrow(String.format("Invalid expression in for-in array definition, reached %s", reportPosition()));
             if(membership.isRightOp(OperationNode.Operation.IN))
                 throw new IllegalArgumentException(String.format("Cannot use multidimensional index in for-in array definition, reached %s", reportPosition()));
+            VariableReferenceNode left = membership.getLeft().getVariableReferenceOrThrow("Cannot use non-variable in for-in array definition, reached %s");
 
             if(tokens.matchAndRemove(Token.TokenType.RIGHTPAREN).isEmpty())
                 throw new RuntimeException(String.format("Expected \")\" after for loop's increment, reached %s", reportPosition()));
             acceptSeperators();
 
             statements = parseBlock();
-            return Optional.of(new ASTnode.ForNode(membership.getLeft(), membership.getRight().get(), statements)); // Freebie get() here should be safe
+            return Optional.of(new ASTnode.ForNode(left, membership.getRight().get(), statements)); // Freebie get() here should be safe
         } else {
             Optional<Node> init;
             Optional<Node> condition;

@@ -98,24 +98,40 @@ public abstract class ASTnode extends Node implements StatementNode{
     public static class ForNode extends ASTnode {
         private Node init;
         private Node update;
-        private boolean forIn = false;
-        private Node member;
+        public final boolean forIn;
+        private VariableReferenceNode member;
         private Node collection;
         
         ForNode(Node init, Node condition, Node update,BlockNode statements) {
             super(condition, statements);
             this.init = init;
             this.update = update;
+            this.forIn = false;
         }
         
-        ForNode(Node member, Node collection, BlockNode statements){
+        ForNode(VariableReferenceNode member, Node collection, BlockNode statements){
             super(statements);
             this.member = member;
             this.collection = collection;
             this.forIn = true;
         }
-        
-        
+
+        public Node getInit() {
+            return init;
+        }
+
+        public Node getUpdate() {
+            return update;
+        }
+
+        public VariableReferenceNode getMember(){
+            return member;
+        }
+
+        public Node getCollection(){
+            return collection;
+        }
+
         public String toString(){
             if(forIn)
                 return String.format("ForNode: for(%s in %s) %s", member, collection, statements);
@@ -205,7 +221,7 @@ public abstract class ASTnode extends Node implements StatementNode{
     }
     
     public static class ReturnNode extends ASTnode {
-        Node value;
+        public final Node value;
         public ReturnNode(Node value) {
             super();
             this.value = value;

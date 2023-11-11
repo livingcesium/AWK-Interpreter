@@ -130,7 +130,7 @@ public class Interpreter {
         populateKnownFunctions();
     }
     
-    public InterpreterDataType evaluateStatement(StatementNode statement, HashMap<String,InterpreterDataType> locals){
+    public ReturnType evaluateStatement(StatementNode statement, HashMap<String,InterpreterDataType> locals){
         if(statement instanceof ASTnode syntax){
         // If, for, while...
             return evaluateSyntax(syntax, locals);
@@ -142,68 +142,177 @@ public class Interpreter {
             throw new RuntimeException("Unrecognized statement type, did the dev finish implementing it?");
     }
     
-    private InterpreterDataType evaluateSyntax(ASTnode syntax, HashMap<String, InterpreterDataType> locals){
+    private ReturnType evaluateSyntax(ASTnode syntax, HashMap<String, InterpreterDataType> locals){
         
         // Check every ASTnode and move onto the correct function/return the corresponding signal
         if(syntax instanceof ASTnode.IfNode ifNode){
-            return evaluateIf(ifNode, locals); // TODO: implement while, for, delete, return
-//        } else if(syntax instanceof ASTnode.WhileNode whileNode){
-//            return evaluateWhile(whileNode, locals);
-//        } else if(syntax instanceof ASTnode.ForNode forNode) {
-//            return evaluateFor(forNode, locals);
-//        } else if(syntax instanceof ASTnode.DeleteNode deleteNode) {
-//            return evaluateDelete(deleteNode, locals);
-//        } else if(syntax instanceof ASTnode.ReturnNode returnNode) {
-//            return evaluateReturn(returnNode, locals);
-        // The cases below use signals
+            return evaluateIf(ifNode, locals);
+        } else if(syntax instanceof ASTnode.WhileNode whileNode){
+            return evaluateWhile(whileNode, locals);
+        } else if(syntax instanceof ASTnode.ForNode forNode) {
+            return evaluateFor(forNode, locals);
+        } else if(syntax instanceof ASTnode.DeleteNode deleteNode) {
+            return evaluateDelete(deleteNode, locals);
+        } else if(syntax instanceof ASTnode.ReturnNode returnNode) {
+            return evaluateReturn(returnNode, locals);
         } else if(syntax instanceof ASTnode.BreakNode) {
-            return new ControlSignal(ControlSignal.SignalType.BREAK);
+            return new ReturnType(ReturnType.Control.BREAK);
         } else if(syntax instanceof ASTnode.ContinueNode) {
-            return new ControlSignal(ControlSignal.SignalType.CONTINUE);
+            return new ReturnType(ReturnType.Control.CONTINUE);
         } else
             throw new RuntimeException("Unrecognized syntax type, did the dev finish implementing it?");
         
     }
-    
-    private InterpreterDataType evaluateIf(ASTnode.IfNode ifNode, HashMap<String, InterpreterDataType> locals){
-        InterpreterDataType condition = getIDT(ifNode.getCondition(), locals);
-        Optional<ASTnode.IfNode> elseNode;
-        boolean conditionTrue = asBoolean(condition.value);
-        // We have to specify it is BOTH numerically true and NOT false, since it may be neither (not a number)
-        
-        
-        if(conditionTrue)
-            return rejectInterrupts(evaluateBlock(ifNode.getStatements(), locals));
-        else if((elseNode = ifNode.getElse()).isPresent())
-            return rejectInterrupts(evaluateIf(elseNode.get(), locals));
-        
-        return new ControlSignal(ControlSignal.SignalType.SUCCESS);
+
+    private ReturnType evaluateDelete(ASTnode.DeleteNode delete, HashMap<String, InterpreterDataType> locals){
+        InterpreterDataType target = getIDT(delete.target, locals);
+        Collection<Node> indices = delete.indices;
+
+        if(target instanceof InterpreterArrayDataType array){
+            HashMap<String, InterpreterDataType> arrayData = array.getArrayValue();
+            for(Node index : indices){
+                InterpreterDataType indexData = getIDT(index, locals);
+                if(!arrayData.containsKey(indexData.value))
+                    throw new IndexOutOfBoundsException(String.format("Index %s out of bounds for array %s", indexData.value, delete.target));
+                arrayData.remove(indexData.value);
+            }
+        } else
+            throw new IllegalArgumentException("Cannot delete from non-array variable");
+
+        return new ReturnType(ReturnType.Control.NORMAL);
+    }
+
+    private ReturnType evaluateReturn(ASTnode.ReturnNode returnNode, HashMap<String, InterpreterDataType> locals){
+        return new ReturnType(getIDT(returnNode.value, locals).value);
     }
     
-    private InterpreterDataType evaluateBlock(BlockNode block, HashMap<String, InterpreterDataType> locals){
+    private ReturnType evaluateIf(ASTnode.IfNode ifNode, HashMap<String, InterpreterDataType> locals){
+        InterpreterDataType condition = getIDT(ifNode.getCondition(), locals);
+        Optional<ASTnode.IfNode> elseNode;
+        boolean trueCase = asBoolean(condition.value);
+        
+        if(trueCase)
+            return evaluateBlock(ifNode.getStatements(), locals);
+        else if((elseNode = ifNode.getElse()).isPresent())
+            return evaluateIf(elseNode.get(), locals);
+
+        return new ReturnType(ReturnType.Control.NORMAL);
+    }
+
+    private ReturnType evaluateFor(ASTnode.ForNode forNode, HashMap<String, InterpreterDataType> locals){
+        if(forNode.forIn)
+            return evaluateForIn(forNode, locals);
+        Node condition = forNode.getCondition();
+        InterpreterDataType conditionData = getIDT(condition, locals);
+        BlockNode block = forNode.getStatements();
+
+        // Initialize section: for(_;;)
+        // i=...
+        getIDT(forNode.getInit(), locals);
+
+        ReturnType result;
+        while(asBoolean(conditionData.value)) /*for(;_;)*/ {
+
+            if((result = evaluateBlock(block, locals)).controlType == ReturnType.Control.BREAK)
+                break;
+            else if(result.controlType == ReturnType.Control.RETURN)
+                return result;
+            // Update section: for(;;_)
+            //i=...
+            getIDT(forNode.getUpdate(), locals);
+        }
+
+        return new ReturnType(ReturnType.Control.NORMAL);
+    }
+
+    private ReturnType evaluateForIn(ASTnode.ForNode forNode, HashMap<String, InterpreterDataType> locals){
+        String memberName = forNode.getMember().getName();
+        InterpreterDataType data = getIDT(forNode.getCollection(), locals);
+        if(!(data instanceof InterpreterArrayDataType array))
+            throw new IllegalArgumentException("Cannot iterate over non-array");
+        BlockNode block = forNode.getStatements();
+
+        HashMap<String, InterpreterDataType> scope = (locals == null) ? globalVariables : locals;
+        ReturnType result;
+
+        for(Map.Entry<String, InterpreterDataType> entry : array.getArrayValue().entrySet()){
+            scope.put(memberName, entry.getValue());
+
+            if((result = evaluateBlock(block, locals)).controlType == ReturnType.Control.BREAK)
+                break;
+            else if(result.controlType == ReturnType.Control.RETURN)
+                return result;
+        }
+
+        return new ReturnType(ReturnType.Control.NORMAL);
+    }
+
+    private ReturnType evaluateDoWhile(ASTnode.WhileNode whileNode, HashMap<String, InterpreterDataType> locals){
+        InterpreterDataType condition;
+        boolean trueCase;
+        BlockNode block = whileNode.getStatements();
+        ReturnType result;
+
+        do{
+            if((result = evaluateBlock(block, locals)).controlType == ReturnType.Control.BREAK)
+                break;
+            else if(result.controlType == ReturnType.Control.RETURN)
+                return result;
+            condition = getIDT(whileNode.getCondition(), locals);
+            trueCase = asBoolean(condition.value);
+        } while(trueCase);
+
+        return new ReturnType(ReturnType.Control.NORMAL);
+    }
+
+    private ReturnType evaluateWhile(ASTnode.WhileNode whileNode, HashMap<String, InterpreterDataType> locals){
+        InterpreterDataType condition = getIDT(whileNode.getCondition(), locals);
+        boolean trueCase = asBoolean(condition.value);
+        BlockNode block = whileNode.getStatements();
+        ReturnType result;
+
+        while(trueCase){
+            if((result = evaluateBlock(block, locals)).controlType == ReturnType.Control.BREAK)
+                break;
+            else if(result.controlType == ReturnType.Control.RETURN)
+                return result;
+            condition = getIDT(whileNode.getCondition(), locals);
+            trueCase = asBoolean(condition.value);
+        }
+
+        return new ReturnType(ReturnType.Control.NORMAL);
+    }
+    
+    private ReturnType evaluateBlock(BlockNode block, HashMap<String, InterpreterDataType> locals){
         Optional<Node> condition;
         InterpreterDataType conditionData;
+        boolean shouldRun = true;
+
         if((condition = block.getCondition()).isPresent()){
             if(condition.get() instanceof RegexNode regex)
             // Translates RegexNode[regex] into OperationNode[$0 ~ regex]
                 conditionData = getIDT(new OperationNode(new FieldReferenceNode(new ConstantNode<Double>(0.0)), OperationNode.Operation.MATCH, regex), locals);
             else
                 conditionData = getIDT(condition.get(), locals);
-            
-            
-            
+
+            shouldRun = asBoolean(conditionData.value);
         }
-        
-        LinkedList<StatementNode> statements = block.getStatements();
-        InterpreterDataType currentValue;
+
+        if(shouldRun)
+            return evaluateStatements(block.getStatements(), locals);
+        else
+            return new ReturnType(ReturnType.Control.NORMAL);
+    }
+
+    private ReturnType evaluateStatements(List<StatementNode> statements, HashMap<String,InterpreterDataType> locals){
+        ReturnType currentValue;
         for(StatementNode statement : statements){
             currentValue = evaluateStatement(statement, locals);
-            if(currentValue instanceof ControlSignal signal)
-                if(signal.type == ControlSignal.SignalType.BREAK || signal.type == ControlSignal.SignalType.CONTINUE)
-                    return signal;
+            if(!currentValue.isType(ReturnType.Control.NORMAL)) // break, continue, return...
+                return currentValue;
         }
-        
-        return new ControlSignal(ControlSignal.SignalType.SUCCESS);
+
+        return new ReturnType(ReturnType.Control.NORMAL);
     }
     
     private InterpreterDataType evaluateCall(FunctionCallNode call, HashMap<String,InterpreterDataType> locals){
@@ -307,22 +416,29 @@ public class Interpreter {
     public InterpreterDataType getIDT(Node node, HashMap<String, InterpreterDataType> locals){
         if(node instanceof RegexNode)
             throw new RuntimeException("Regex literals are only valid in the condition of conditional control blocks, or passed into certain built-in functions"); // TODO: don't make yourself a liar
-        
-        
-        if(node instanceof AssignmentNode assignment)
-            return evaluateAssignment(assignment, locals);
-        else if(node instanceof ConstantNode<?> constant)
-            return evaluateConstant(constant);
-        else if(node instanceof FunctionCallNode functionCall)
-            return evaluateCall(functionCall, locals);
-        else if(node instanceof TernaryNode ternary)
-            return evaluateTernary(ternary, locals);
-        else if(node instanceof VariableReferenceNode variableRef)
-            return evaluateVariableRef(variableRef, locals);
-        else if(node instanceof OperationNode operation)
-            return evaluateOperation(operation, locals);
-        else
-            throw new RuntimeException("Unknown node type");
+
+
+        switch (node) {
+            case AssignmentNode assignment -> { // Gets value of assignment, errors on other types
+                return evaluateAssignment(assignment, locals).expectData("Assignment as expression must result in a value");
+            }
+            case ConstantNode<?> constant -> {
+                return evaluateConstant(constant);
+            }
+            case FunctionCallNode functionCall -> {
+                return evaluateCall(functionCall, locals);
+            }
+            case TernaryNode ternary -> {
+                return evaluateTernary(ternary, locals);
+            }
+            case VariableReferenceNode variableRef -> {
+                return evaluateVariableRef(variableRef, locals);
+            }
+            case OperationNode operation -> {
+                return evaluateOperation(operation, locals);
+            }
+            case null, default -> throw new RuntimeException("Unknown node type");
+        }
     }
     
     private InterpreterDataType evaluateTernary(TernaryNode node, HashMap<String, InterpreterDataType> scope){
@@ -583,7 +699,7 @@ public class Interpreter {
         return variableData;
         }
     
-    private InterpreterDataType evaluateAssignment(AssignmentNode node, HashMap<String, InterpreterDataType> locals){
+    private ReturnType evaluateAssignment(AssignmentNode node, HashMap<String, InterpreterDataType> locals){
         String name = node.getName();
         InterpreterDataType value = getIDT(node.getAssignedTo(), locals);
         boolean postOperation;
@@ -608,7 +724,7 @@ public class Interpreter {
             original = globalVariables.get(name);
         } else if(postOperation)
             throw new RuntimeException(String.format("Variable %s not defined, cannot return value before assignment (post operation)", name));
-        
+
         Optional<Node> indexNode; // Used for both array and field references
         
         if(node.getTarget() instanceof FieldReferenceNode fieldReference){
@@ -647,10 +763,10 @@ public class Interpreter {
         if(postOperation) {
             if(original == null)
                 throw new RuntimeException("Post-operation failed to get original value, isn't this impossible?");
-            return original;
+            return new ReturnType(original.value, false);
         }
         else 
-            return value;
+            return new ReturnType(value.value, false); // Maybe refactor value.value away
     }
     
     private InterpreterDataType evaluateConstant(ConstantNode<?> node){
@@ -896,12 +1012,6 @@ public class Interpreter {
         ));
 
 
-    }
-    
-    private InterpreterDataType rejectInterrupts(InterpreterDataType data){
-        if(data instanceof ControlSignal signal && signal.type != ControlSignal.SignalType.SUCCESS)
-                throw new RuntimeException("Break and continue statements must be inside a loop");
-        return data;
     }
     
     public static Optional<InterpreterDataType> getGlobalVariable(String name){
