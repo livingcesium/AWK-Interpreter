@@ -135,6 +135,13 @@ public class ParserTest {
                 new Token[]{new Token(1,1, Token.TokenType.WORD, "passedTests"), new Token(1,12, Token.TokenType.ASSIGNADD), new Token(1,15, Token.TokenType.NUMBER, "1")},
                 new AssignmentNode(new VariableReferenceNode("passedTests"), new OperationNode(new VariableReferenceNode("passedTests"), OperationNode.Operation.ADD, new ConstantNode<Double>(1.0)))
         );
+
+        // pre-lexed:
+        // test("attempt")
+        cases.put(
+                new Token[]{new Token(1,1, Token.TokenType.WORD, "test"), new Token(1,5, Token.TokenType.LEFTPAREN), new Token(1,6, Token.TokenType.STRINGLITERAL, "attempt"), new Token(1,14, Token.TokenType.RIGHTPAREN)},
+                new FunctionCallNode("test", List.of(new ConstantNode<String>("attempt")))
+        );
         
         // use new map
         for (Map.Entry<Token[], Node> entry : cases.entrySet()) {
@@ -188,6 +195,10 @@ public class ParserTest {
         cases.put(
                 "sanity /= bugs *= 1000",
                 new AssignmentNode(new VariableReferenceNode("sanity"), new OperationNode(new VariableReferenceNode("sanity"), OperationNode.Operation.DIVIDE, new AssignmentNode(new VariableReferenceNode("bugs"), new OperationNode(new VariableReferenceNode("bugs"), OperationNode.Operation.MULTIPLY, new ConstantNode<Double>(1000.0)))))
+        );
+        cases.put(
+                "func(a, b[2])",
+                new FunctionCallNode("func", List.of(new VariableReferenceNode("a"), new VariableReferenceNode("b", new ConstantNode<Double>(2.0))))
         );
         
         for (Map.Entry<String, Node> entry : cases.entrySet()) {
@@ -291,7 +302,7 @@ public class ParserTest {
                 new ProgramNode(new LinkedList<BlockNode>(List.of(new BlockNode(statements))), new LinkedList<>(), new LinkedList<>(), new LinkedList<>())
         );
         
-        // Next case..
+        // Next case...
         
         
         forNodes = new LinkedList<>(List.of(

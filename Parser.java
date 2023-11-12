@@ -894,7 +894,7 @@ public class Parser {
         
         if(type == null)
             return Optional.empty();
-        
+
         boolean parenthesized = tokens.matchAndRemove(Token.TokenType.LEFTPAREN).isEmpty();
 
         LinkedList<Node> arguments = getArguments();
@@ -909,7 +909,7 @@ public class Parser {
     
     private Optional<Node> parseFunctionCall(String name){
         if(!tokens.moreTokens())
-            return Optional.empty();
+            throw new IndexOutOfBoundsException("Out of tokens");
         
         if(tokens.matchAndRemove(Token.TokenType.LEFTPAREN).isEmpty())
             return Optional.empty();
@@ -933,7 +933,7 @@ public class Parser {
         if(!arguments.isEmpty()) // If we have one, loop for more
             while(tokens.matchAndRemove(Token.TokenType.COMMA).isPresent()){
                 if((argument = parseOperation()).isEmpty()) {
-                    throw new RuntimeException(String.format("Could not parse argument, reached %s", reportPosition()));
+                    throw new RuntimeException(String.format("Expected argument after comma, reached %s", reportPosition()));
                 }
                 arguments.add(argument.get());
             }
@@ -956,8 +956,9 @@ public class Parser {
         VariableReferenceNode reference;
         Optional<AssignmentNode> assignment; // if we find post-operator
         if(( nameToken = tokens.matchAndRemove(Token.TokenType.WORD) ).isPresent()){
-            
-            if(tokens.matchAndRemove(Token.TokenType.LEFTPAREN).isPresent()){
+
+            Optional<Token> seeker = tokens.peek(1);
+            if(seeker.isPresent() && seeker.get().isType(Token.TokenType.LEFTPAREN)){
                 return parseFunctionCall(nameToken.get().getValue());
             }
             

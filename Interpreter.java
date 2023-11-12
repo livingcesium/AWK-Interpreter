@@ -101,7 +101,7 @@ public class Interpreter {
         globalVariables = new HashMap<>();
         globalVariables.put("FILENAME", new InterpreterDataType(path.toString()));
         setDefaults();
-
+        setFunctions(program.getFunctions());
         lineManager = new LineManager(Files.readAllLines(path), List.of());
 
 
@@ -112,6 +112,7 @@ public class Interpreter {
         globalVariables = new HashMap<>();
         globalVariables.put("FILENAME", new InterpreterDataType("STDIN"));
         setDefaults();
+        setFunctions(program.getFunctions());
         this.lineManager = new LineManager(List.of(), List.of());
     }
     
@@ -121,6 +122,13 @@ public class Interpreter {
         globalVariables.put("FILENAME", new InterpreterDataType("STDIN"));
         setDefaults();
         this.lineManager = new LineManager(debugLines, List.of());
+    }
+
+    // TODO: Change from public once full functionality is implemented
+    public void setFunctions(LinkedList<FunctionDefinitionNode> functions){
+        for(FunctionDefinitionNode function : functions){
+            this.functions.put(function.getName(), function);
+        }
     }
     
     private void setDefaults(){
@@ -137,7 +145,7 @@ public class Interpreter {
         } else if(statement instanceof AssignmentNode assignment){
             return evaluateAssignment(assignment, locals);
         } else if(statement instanceof FunctionCallNode functionCall){
-            return evaluateStatement(functionCall, locals);
+            return evaluateCall(functionCall, locals);
         } else 
             throw new RuntimeException("Unrecognized statement type, did the dev finish implementing it?");
     }
@@ -202,16 +210,18 @@ public class Interpreter {
     private ReturnType evaluateFor(ASTnode.ForNode forNode, HashMap<String, InterpreterDataType> locals){
         if(forNode.forIn)
             return evaluateForIn(forNode, locals);
-        Node condition = forNode.getCondition();
-        InterpreterDataType conditionData = getIDT(condition, locals);
-        BlockNode block = forNode.getStatements();
 
         // Initialize section: for(_;;)
         // i=...
         getIDT(forNode.getInit(), locals);
 
+
+        Node condition = forNode.getCondition();
+        InterpreterDataType conditionData;
+        BlockNode block = forNode.getStatements();
+
         ReturnType result;
-        while(asBoolean(conditionData.value)) /*for(;_;)*/ {
+        while(asBoolean((conditionData = getIDT(condition, locals)).value)) /*for(;_;)*/ {
 
             if((result = evaluateBlock(block, locals)).controlType == ReturnType.Control.BREAK)
                 break;
@@ -220,6 +230,8 @@ public class Interpreter {
             // Update section: for(;;_)
             //i=...
             getIDT(forNode.getUpdate(), locals);
+
+
         }
 
         return new ReturnType(ReturnType.Control.NORMAL);
@@ -266,6 +278,8 @@ public class Interpreter {
     }
 
     private ReturnType evaluateWhile(ASTnode.WhileNode whileNode, HashMap<String, InterpreterDataType> locals){
+        if(whileNode.doWhile)
+            return evaluateDoWhile(whileNode, locals);
         InterpreterDataType condition = getIDT(whileNode.getCondition(), locals);
         boolean trueCase = asBoolean(condition.value);
         BlockNode block = whileNode.getStatements();
@@ -315,7 +329,7 @@ public class Interpreter {
         return new ReturnType(ReturnType.Control.NORMAL);
     }
     
-    private InterpreterDataType evaluateCall(FunctionCallNode call, HashMap<String,InterpreterDataType> locals){
+    private ReturnType evaluateCall(FunctionCallNode call, HashMap<String,InterpreterDataType> locals){
         
         if(!functions.containsKey(call.getName()))
             throw new RuntimeException(String.format("Function %s not defined", call.getName()));
@@ -325,22 +339,17 @@ public class Interpreter {
         if(func instanceof BuiltInFunctionDefinitionNode builtIn) {
             return evaluateBuiltIn(builtIn, call.getArguments(), locals);
         }
+
+        HashMap<String,InterpreterDataType> scope = (locals == null) ? globalVariables : locals;
+        scope.putAll(collectArgs(func.getParameterNames(), call.getArguments(), locals));
+
+        return evaluateStatements(func.getStatements(), scope);
         
-        HashMap<String, InterpreterDataType> args = collectArgs(func.getParameterNames(), call.getArguments(), locals);
-        
-        
-        
-        return runFunctionCall(call, args);
-        
-    }
-    
-    private InterpreterDataType runFunctionCall(FunctionCallNode call, HashMap<String,InterpreterDataType> scope){
-        //TODO: implement
-        throw new RuntimeException("User-defined functions not implemented yet");
     }
     
     private HashMap<String, InterpreterDataType> collectArgs(LinkedList<String> parameterNames, List<Node> arguments, HashMap<String,InterpreterDataType> locals) {
-        
+        // Built-in functions don't use this one, maybe could be refactored but the small differences are annoying enough to push that decision to later
+
         HashMap<String, InterpreterDataType> args = new HashMap<>();
         
         Iterator<String> paramNameIterator = parameterNames.iterator();
@@ -359,7 +368,7 @@ public class Interpreter {
         return args;
     }
     
-    private InterpreterDataType evaluateBuiltIn(BuiltInFunctionDefinitionNode builtIn, LinkedList<Node> argumentNodes, HashMap<String, InterpreterDataType> locals){
+    private ReturnType evaluateBuiltIn(BuiltInFunctionDefinitionNode builtIn, LinkedList<Node> argumentNodes, HashMap<String, InterpreterDataType> locals){
         
         HashMap<String, InterpreterDataType> scope = (locals == null) ? globalVariables : locals;
         // Gather args
@@ -370,7 +379,7 @@ public class Interpreter {
         Iterator<Node> argNodeIterator = argumentNodes.iterator();
         Node currentNode;
         
-        // Check every parameter set, validating that they match what was passed in as we collect arguments one by one
+        // Check every possible parameter set, validating that they match what was passed in as we collect arguments one by one
         for(LinkedList<String> parameterSet : builtIn.getAcceptedParameterNames()){
             for(String parameter : parameterSet){
                 if(!argNodeIterator.hasNext()) {
@@ -410,35 +419,30 @@ public class Interpreter {
         for(String variableName : varToParam.keySet())
             scope.put(variableName, args.get(varToParam.get(variableName)));
         
-        return new InterpreterDataType(output);
+        return new ReturnType(output);
     }
     
     public InterpreterDataType getIDT(Node node, HashMap<String, InterpreterDataType> locals){
         if(node instanceof RegexNode)
             throw new RuntimeException("Regex literals are only valid in the condition of conditional control blocks, or passed into certain built-in functions"); // TODO: don't make yourself a liar
 
-
-        switch (node) {
-            case AssignmentNode assignment -> { // Gets value of assignment, errors on other types
-                return evaluateAssignment(assignment, locals).expectData("Assignment as expression must result in a value");
-            }
-            case ConstantNode<?> constant -> {
-                return evaluateConstant(constant);
-            }
-            case FunctionCallNode functionCall -> {
-                return evaluateCall(functionCall, locals);
-            }
-            case TernaryNode ternary -> {
-                return evaluateTernary(ternary, locals);
-            }
-            case VariableReferenceNode variableRef -> {
-                return evaluateVariableRef(variableRef, locals);
-            }
-            case OperationNode operation -> {
-                return evaluateOperation(operation, locals);
-            }
-            case null, default -> throw new RuntimeException("Unknown node type");
+        // IntelliJ is suggesting I change this into some pattern switch statement thing, that isn't even normally supported by the java version I'm on lol.
+        if (node instanceof AssignmentNode assignment) {
+            return evaluateAssignment(assignment, locals).expectData("Assignment as expression must result in a value");
+        } else if (node instanceof ConstantNode<?> constant) {
+            return evaluateConstant(constant);
+        } else if (node instanceof FunctionCallNode functionCall) {
+            return evaluateCall(functionCall, locals).expectData("Function call as expression must result in a value");
+        } else if (node instanceof TernaryNode ternary) {
+            return evaluateTernary(ternary, locals);
+        } else if (node instanceof VariableReferenceNode variableRef) {
+            return evaluateVariableRef(variableRef, locals);
+        } else if (node instanceof OperationNode operation) {
+            return evaluateOperation(operation, locals);
+        } else {
+            throw new RuntimeException("Unknown node type");
         }
+
     }
     
     private InterpreterDataType evaluateTernary(TernaryNode node, HashMap<String, InterpreterDataType> scope){
@@ -681,7 +685,7 @@ public class Interpreter {
         else if(globalVariables.containsKey(name)) {
             variableData = globalVariables.get(name);
         } else
-            throw new RuntimeException(String.format("Array Variable %s not defined", name));
+            throw new RuntimeException(String.format("Variable %s not defined", name));
         
         // Handle the array (or field reference) case
         if((index = node.getIndex()).isPresent()){

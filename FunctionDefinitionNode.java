@@ -35,6 +35,10 @@ public class FunctionDefinitionNode extends Node{
         return String.format("function %s(%s) {\n\t%s\n}", name, listToString(parameterNames, ", "), listToString(statements, ";\n\t"));
     }
 
+    public LinkedList<StatementNode> getStatements(){
+        return statements;
+    }
+
     private String listToString(LinkedList<?> list, String delimiter) {
         
         if(list.isEmpty())

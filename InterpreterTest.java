@@ -1,4 +1,6 @@
 import org.junit.Test;
+
+import java.util.LinkedList;
 import java.util.List;
 
 import static org.junit.Assert.assertEquals;
@@ -115,5 +117,177 @@ public class InterpreterTest {
         
         result = interpreter.getIDT(new OperationNode(new ConstantNode<Double>(1.0), OperationNode.Operation.IN, new VariableReferenceNode("array")), null);
         result = interpreter.getIDT(new OperationNode(new ConstantNode<Double>(2.0), OperationNode.Operation.IN, new VariableReferenceNode("array")), null);
+    }
+
+    @Test
+    public void testIf(){
+        Interpreter interpreter = new Interpreter(List.of("Test file ha ha"));
+
+        // run = true
+        interpreter.evaluateStatement(new AssignmentNode(new VariableReferenceNode("run"), new ConstantNode<Boolean>(true)), null);
+
+        ASTnode.IfNode elseNode = new ASTnode.IfNode(new BlockNode(new LinkedList<>(
+                List.of(new AssignmentNode(new VariableReferenceNode("x"), new ConstantNode<Double>(2.0)))
+        )));
+
+        ASTnode.IfNode ifNode = new ASTnode.IfNode(new VariableReferenceNode("run"), new BlockNode(new LinkedList<>(
+                List.of(new AssignmentNode(new VariableReferenceNode("x"), new ConstantNode<Double>(1.0)))
+        )), elseNode);
+
+        interpreter.evaluateStatement(ifNode, null);
+
+        InterpreterDataType result = interpreter.getIDT(new VariableReferenceNode("x"), null);
+        assertEquals(new InterpreterDataType("1.0"), result);
+
+        // run = false
+        interpreter.evaluateStatement(new AssignmentNode(new VariableReferenceNode("run"), new ConstantNode<Boolean>(false)), null);
+        interpreter.evaluateStatement(ifNode, null);
+
+        result = interpreter.getIDT(new VariableReferenceNode("x"), null);
+        assertEquals(new InterpreterDataType("2.0"), result);
+
+    }
+
+    // Continue tested in this one too
+    @Test
+    public void testFor(){
+        Interpreter interpreter = new Interpreter(List.of("Test file ha ha"));
+
+        interpreter.evaluateStatement(new AssignmentNode(new VariableReferenceNode("y"), new ConstantNode<Double>(0.0)), null); // y = 0;
+        ASTnode.ForNode forNode = new ASTnode.ForNode(
+                new AssignmentNode(new VariableReferenceNode("x"), new ConstantNode<Double>(0.0)), // x = 0
+                new OperationNode(new VariableReferenceNode("x"), OperationNode.Operation.LESSTHAN, new ConstantNode<Double>(10.0)), // x < 10
+                new AssignmentNode(new VariableReferenceNode("x"), new OperationNode(new VariableReferenceNode("x"), OperationNode.Operation.POSTINCREMENT)), // x++
+                new BlockNode(new LinkedList<>(List.of(
+                        new AssignmentNode(new VariableReferenceNode("y"), new OperationNode(new VariableReferenceNode("y"), OperationNode.Operation.POSTDECREMENT)) // y--
+                )))
+        );
+        interpreter.evaluateStatement(forNode, null);
+
+        InterpreterDataType result = interpreter.getIDT(new VariableReferenceNode("y"), null);
+        assertEquals(new InterpreterDataType("-10.0"), result);
+
+        // Test continue
+
+        interpreter.evaluateStatement(new AssignmentNode(new VariableReferenceNode("y"), new ConstantNode<Double>(0.0)), null); // y = 0;
+
+        // This will skip the step x = 5
+        ASTnode.IfNode conditionalSkip = new ASTnode.IfNode(new OperationNode(new VariableReferenceNode("x"), OperationNode.Operation.EQUAL, new ConstantNode<Double>(5.0)), new BlockNode(new LinkedList<>(List.of(
+                new ASTnode.ContinueNode()
+        ))));
+
+        forNode = new ASTnode.ForNode(
+                new AssignmentNode(new VariableReferenceNode("x"), new ConstantNode<Double>(0.0)), // x = 0
+                new OperationNode(new VariableReferenceNode("x"), OperationNode.Operation.LESSTHAN, new ConstantNode<Double>(10.0)), // x < 10
+                new AssignmentNode(new VariableReferenceNode("x"), new OperationNode(new VariableReferenceNode("x"), OperationNode.Operation.POSTINCREMENT)), // x++
+                new BlockNode(new LinkedList<>(List.of(
+                        conditionalSkip,
+                        new AssignmentNode(new VariableReferenceNode("y"), new OperationNode(new VariableReferenceNode("y"), OperationNode.Operation.POSTDECREMENT)) // y--
+                )))
+        );
+
+        interpreter.evaluateStatement(forNode, null);
+
+        result = interpreter.getIDT(new VariableReferenceNode("y"), null);
+        assertEquals(new InterpreterDataType("-9.0"), result);
+
+        // Test for in
+
+        interpreter.evaluateStatement(new AssignmentNode(new VariableReferenceNode("array", new ConstantNode<Double>(0.0)), new ConstantNode<Character>('a')), null);
+        interpreter.evaluateStatement(new AssignmentNode(new VariableReferenceNode("array", new ConstantNode<Double>(1.0)), new ConstantNode<Character>('b')), null);
+        interpreter.evaluateStatement(new AssignmentNode(new VariableReferenceNode("array", new ConstantNode<Double>(2.0)), new ConstantNode<Character>('c')), null);
+        interpreter.evaluateStatement(new AssignmentNode(new VariableReferenceNode("string"), new ConstantNode<String>("")), null);
+        forNode = new ASTnode.ForNode(
+                new VariableReferenceNode("entry"),
+                new VariableReferenceNode("array"),
+                new BlockNode(new LinkedList<>(List.of(
+                        new AssignmentNode(new VariableReferenceNode("string"), new OperationNode(new VariableReferenceNode("string"), OperationNode.Operation.CONCATENATION, new VariableReferenceNode("entry"))) // string = string entry (concat)
+                )))
+        );
+        interpreter.evaluateStatement(forNode, null);
+
+        result = interpreter.getIDT(new VariableReferenceNode("string"), null);
+        assertEquals(new InterpreterDataType("abc"), result);
+    }
+
+    // Break tested in this one too
+    @Test
+    public void testWhile(){
+        Interpreter interpreter = new Interpreter(List.of("Test file ha ha"));
+
+        interpreter.evaluateStatement(new AssignmentNode(new VariableReferenceNode("x"), new ConstantNode<Double>(0.0)), null); // x = 0
+        ASTnode.WhileNode whileNode = new ASTnode.WhileNode(
+                new OperationNode(new VariableReferenceNode("x"), OperationNode.Operation.LESSTHAN, new ConstantNode<Double>(10.0)),
+                new BlockNode(new LinkedList<>(List.of(
+                        new AssignmentNode(new VariableReferenceNode("x"), new OperationNode(new VariableReferenceNode("x"), OperationNode.Operation.POSTINCREMENT))
+                )))
+        );
+        interpreter.evaluateStatement(whileNode, null);
+
+        InterpreterDataType result = interpreter.getIDT(new VariableReferenceNode("x"), null);
+        assertEquals(new InterpreterDataType("10.0"), result);
+
+        // Test do while
+
+        interpreter.evaluateStatement(new AssignmentNode(new VariableReferenceNode("x"), new ConstantNode<Double>(0.0)), null); // x = 0
+
+        ASTnode.WhileNode doWhileNode = new ASTnode.WhileNode(
+                new OperationNode(new VariableReferenceNode("x"), OperationNode.Operation.LESSTHAN, new ConstantNode<Double>(11.0)),
+                new BlockNode(new LinkedList<>(List.of(
+                        new AssignmentNode(new VariableReferenceNode("x"), new OperationNode(new VariableReferenceNode("x"), OperationNode.Operation.POSTINCREMENT))
+                )))
+        , true);
+        interpreter.evaluateStatement(doWhileNode, null);
+
+        result = interpreter.getIDT(new VariableReferenceNode("x"), null);
+        assertEquals(new InterpreterDataType("11.0"), result);
+
+        // Test break
+
+        interpreter.evaluateStatement(new AssignmentNode(new VariableReferenceNode("x"), new ConstantNode<Double>(0.0)), null); // x = 0
+
+        ASTnode.WhileNode breakWhile = new ASTnode.WhileNode(
+                new OperationNode(new VariableReferenceNode("x"), OperationNode.Operation.LESSTHAN, new ConstantNode<Double>(10.0)),
+                new BlockNode(new LinkedList<>(List.of(
+                        new AssignmentNode(new VariableReferenceNode("x"), new OperationNode(new VariableReferenceNode("x"), OperationNode.Operation.POSTINCREMENT)),
+                        new ASTnode.BreakNode()
+                )))
+        );
+
+        interpreter.evaluateStatement(breakWhile, null);
+
+        result = interpreter.getIDT(new VariableReferenceNode("x"), null);
+        assertEquals(new InterpreterDataType("1.0"), result); // Should only increment once, otherwise would be infinite lol
+
+    }
+
+
+    // Return tested in this one too
+    @Test
+    public void testFunctionCall(){
+        Interpreter interpreter = new Interpreter(List.of("Test file ha ha"));
+
+        FunctionDefinitionNode function = new FunctionDefinitionNode("add", new LinkedList<>(List.of(
+                new ASTnode.ReturnNode(new OperationNode(new VariableReferenceNode("x"), OperationNode.Operation.ADD, new VariableReferenceNode("y")))
+        )), new LinkedList<>(List.of("x", "y")));
+
+        interpreter.setFunctions(new LinkedList<>(List.of(function)));
+
+        interpreter.evaluateStatement(new AssignmentNode(new VariableReferenceNode("x"), new ConstantNode<Double>(1.0)), null);
+        interpreter.evaluateStatement(new AssignmentNode(new VariableReferenceNode("y"), new ConstantNode<Double>(2.0)), null);
+
+        FunctionCallNode functionCall = new FunctionCallNode("add", new LinkedList<>(List.of(
+                new VariableReferenceNode("x"),
+                new VariableReferenceNode("y")
+        )));
+
+
+        InterpreterDataType result = interpreter.evaluateStatement(functionCall, null);;
+        assertEquals(new ReturnType("3.0"), result);
+
+        // Test function as expression (and return)
+
+        result = interpreter.getIDT(new OperationNode(functionCall, OperationNode.Operation.POSTINCREMENT), null);
+        assertEquals(new InterpreterDataType("4.0"), result);
     }
 }
