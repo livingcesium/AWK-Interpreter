@@ -290,4 +290,31 @@ public class InterpreterTest {
         result = interpreter.getIDT(new OperationNode(functionCall, OperationNode.Operation.POSTINCREMENT), null);
         assertEquals(new InterpreterDataType("4.0"), result);
     }
+    
+    @Test
+    public void testVariadicFunctionCall(){
+        Interpreter interpreter = new Interpreter(List.of("Test file ha ha"));
+
+        FunctionDefinitionNode function = new FunctionDefinitionNode("add", new LinkedList<>(List.of(
+                new AssignmentNode(new VariableReferenceNode("sum"), new ConstantNode<Double>(0.0)),
+                new ASTnode.ForNode(new VariableReferenceNode("number"), new VariableReferenceNode("add"), new BlockNode(new LinkedList<>(List.of(
+                        new AssignmentNode(new VariableReferenceNode("sum"), new OperationNode(new VariableReferenceNode("sum"), OperationNode.Operation.ADD, new VariableReferenceNode("number")))
+                )))),
+                new ASTnode.ReturnNode(new VariableReferenceNode("sum")))
+        ));
+        
+        interpreter.setFunctions(new LinkedList<>(List.of(function)));
+        
+        FunctionCallNode call = new FunctionCallNode("add", new LinkedList<>(List.of(
+                new ConstantNode<Double>(1.0),
+                new ConstantNode<Double>(2.0),
+                new ConstantNode<Double>(3.0),
+                new ConstantNode<Double>(4.0),
+                new ConstantNode<Double>(5.0)
+        )));
+        
+        InterpreterDataType result = interpreter.evaluateStatement(call, null);
+        
+        assertEquals(new ReturnType("15.0"), result);
+    }
 }

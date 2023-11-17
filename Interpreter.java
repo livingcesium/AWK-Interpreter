@@ -9,17 +9,15 @@ import java.util.regex.Pattern;
 public class Interpreter {
     private static class LineManager{
         private LinkedList<String> lines;
-        private LinkedList<String> out;
         
-        public LineManager(List<String> lines, List<String> out){
-            this.out = new LinkedList<>(out);
+        public LineManager(List<String> lines){
+            globalVariables.put("NR", new InterpreterDataType("0"));
             switchFile(lines);
         }
         
         public void switchFile(List<String> newLines){
             this.lines = new LinkedList<>(newLines);
-            globalVariables.put("FNR", new InterpreterDataType("1"));
-            globalVariables.put("NR", new InterpreterDataType("1"));
+            globalVariables.put("FNR", new InterpreterDataType("0")); // Reset FNR
             if(!handleNextLine())
                 splitAndAssign("");
         }
@@ -41,8 +39,8 @@ public class Interpreter {
             for(String s : split){
                 globalVariables.put("$"+ i++, new InterpreterDataType(s));
             }
-            // NF = i + 1 (Number of fields)
-            globalVariables.put("NF", new InterpreterDataType(Integer.toString(i + 1)));
+            // NF = i - 1 (Number of fields)
+            globalVariables.put("NF", new InterpreterDataType(Integer.toString(i - 1)));
             return true;
         }
         public boolean editField(int index, String newValue){
@@ -61,24 +59,11 @@ public class Interpreter {
         }
         
         private String getNext(){
-            
-            if(globalVariables.containsKey("$0"))
-            // Put the previous line into the output
-                toOutput(globalVariables.get("$0").value);
-            
             // NR++ (Number of records)
             globalVariables.put("NR", new InterpreterDataType(Integer.toString(Integer.parseInt(globalVariables.get("NR").value) + 1)));
             // FNR ++ (File Number of Records)
             globalVariables.put("FNR", new InterpreterDataType(Integer.toString(Integer.parseInt(globalVariables.get("FNR").value) + 1)));
             return this.lines.remove(0);
-        }
-        
-        private boolean toOutput(String line){
-            return this.out.add(line);
-        }
-        
-        public List<String> getOutput(){
-            return this.out;
         }
         
         public String peekNext(){
@@ -93,49 +78,95 @@ public class Interpreter {
     private HashMap<String, FunctionDefinitionNode> functions = new HashMap<>();
 
     private LineManager lineManager;
+    private ProgramNode program;
+    private String[] knownArgs = {"FS", "OFMT", "OFS"};
 
-
-    public Interpreter(ProgramNode program, Path path) throws IOException {
-
-        System.out.println("New interpreter created, globals cleared");
+    
+    public Interpreter(ProgramNode program, Path fileArg, HashMap<String, String> otherArgs) throws IOException {
+        initGlobals(otherArgs);
+        System.out.printf("New interpreter with argument \"%s\" created, globals cleared\n", fileArg);
         globalVariables = new HashMap<>();
-        globalVariables.put("FILENAME", new InterpreterDataType(path.toString()));
+        if(fileArg != null)
+            globalVariables.put("FILENAME", new InterpreterDataType(fileArg.toString()));
+        else 
+            globalVariables.put("FILENAME", new InterpreterDataType(""));
         setDefaults();
         setFunctions(program.getFunctions());
-        lineManager = new LineManager(Files.readAllLines(path), List.of());
-
+        if(fileArg != null)
+            lineManager = new LineManager(Files.readAllLines(fileArg));
+        else
+            lineManager = new LineManager(List.of());
+        this.program = program;
 
     }
+    
+    public Interpreter(ProgramNode program, Path fileArg) throws IOException {
+        this(program, fileArg, new HashMap<>());
+    }
 
-    public Interpreter(ProgramNode program){
-        System.out.println("New interpreter created in stdin mode, globals cleared");
+    public Interpreter(ProgramNode program, HashMap<String, String> awkArgs){
+        initGlobals(awkArgs);
+        System.out.println("New interpreter created, globals cleared");
         globalVariables = new HashMap<>();
-        globalVariables.put("FILENAME", new InterpreterDataType("STDIN"));
+        globalVariables.put("FILENAME", new InterpreterDataType(""));
         setDefaults();
         setFunctions(program.getFunctions());
-        this.lineManager = new LineManager(List.of(), List.of());
+        lineManager = new LineManager(List.of());
+        this.program = program;
+    }
+    
+    public Interpreter(ProgramNode program){
+        this(program, new HashMap<>());
     }
     
     public Interpreter(List<String> debugLines){
-        System.out.println("New interpreter created in stdin mode, globals cleared");
+        System.out.println("New debug interpreter created, globals cleared");
         globalVariables = new HashMap<>();
         globalVariables.put("FILENAME", new InterpreterDataType("STDIN"));
         setDefaults();
-        this.lineManager = new LineManager(debugLines, List.of());
+        this.lineManager = new LineManager(debugLines);
     }
-
-    // TODO: Change from public once full functionality is implemented
-    public void setFunctions(LinkedList<FunctionDefinitionNode> functions){
-        for(FunctionDefinitionNode function : functions){
-            this.functions.put(function.getName(), function);
+    
+    private void initGlobals(HashMap<String, String> awkArgs){
+        for(String arg : knownArgs){
+            if(awkArgs.containsKey(arg))
+                globalVariables.put(arg, new InterpreterDataType(awkArgs.get(arg)));
         }
     }
     
+    // TODO: Change from public once full functionality is implemented
+    public void setFunctions(LinkedList<FunctionDefinitionNode> functions){
+        for(FunctionDefinitionNode function : functions)
+            this.functions.put(function.getName(), function);
+    }
+    
     private void setDefaults(){
-        globalVariables.put("FS", new InterpreterDataType(" "));
-        globalVariables.put("OFMT", new InterpreterDataType("%.6g"));
-        globalVariables.put("OFS", new InterpreterDataType("\n"));
+        globalVariables.putIfAbsent("FS", new InterpreterDataType(" "));
+        globalVariables.putIfAbsent("OFMT", new InterpreterDataType("%.6g"));
+        globalVariables.putIfAbsent("OFS", new InterpreterDataType("\n"));
         populateKnownFunctions();
+    }
+    
+    public void changeFile(Path path) throws IOException {
+        lineManager.switchFile(Files.readAllLines(path));
+    }
+    
+    public void interpretProgram(){
+        
+        for(FunctionDefinitionNode func: program.getFunctions())
+            functions.put(func.getName(), func);
+        
+        for(BlockNode block: program.getBegin())
+            evaluateBlock(block, null).rejectLoopControl("Cannot use break or continue outside of a loop, in BEGIN block");
+
+        do
+            for(BlockNode block: program.getOther())
+                evaluateBlock(block, null).rejectLoopControl("Cannot use break or continue outside of a loop, in \"other\" block");
+        while(lineManager.handleNextLine());
+        
+        for(BlockNode block: program.getEnd())
+            evaluateBlock(block, null).rejectLoopControl("Cannot use break or continue outside of a loop, in END block");
+        
     }
     
     public ReturnType evaluateStatement(StatementNode statement, HashMap<String,InterpreterDataType> locals){
@@ -145,9 +176,13 @@ public class Interpreter {
         } else if(statement instanceof AssignmentNode assignment){
             return evaluateAssignment(assignment, locals);
         } else if(statement instanceof FunctionCallNode functionCall){
-            return evaluateCall(functionCall, locals);
+            ReturnType returned = evaluateCall(functionCall, locals);
+            if(returned.isType(ReturnType.Control.RETURN) || returned.isType(ReturnType.Control.NORMAL))
+                return new ReturnType(ReturnType.Control.NORMAL, functionCall.reportPosition());
+            else
+                throw new RuntimeException("Function did not return control properly. Did you use break or continue outside of a loop? By %s".formatted(functionCall.reportPosition()));
         } else 
-            throw new RuntimeException("Unrecognized statement type, did the dev finish implementing it?");
+            throw new RuntimeException("Expected statement, by %s".formatted(statement.reportPosition()));
     }
     
     private ReturnType evaluateSyntax(ASTnode syntax, HashMap<String, InterpreterDataType> locals){
@@ -164,11 +199,11 @@ public class Interpreter {
         } else if(syntax instanceof ASTnode.ReturnNode returnNode) {
             return evaluateReturn(returnNode, locals);
         } else if(syntax instanceof ASTnode.BreakNode) {
-            return new ReturnType(ReturnType.Control.BREAK);
+            return new ReturnType(ReturnType.Control.BREAK, syntax.reportPosition());
         } else if(syntax instanceof ASTnode.ContinueNode) {
-            return new ReturnType(ReturnType.Control.CONTINUE);
+            return new ReturnType(ReturnType.Control.CONTINUE, syntax.reportPosition());
         } else
-            throw new RuntimeException("Unrecognized syntax type, did the dev finish implementing it?");
+            throw new RuntimeException("Unrecognized syntax type, did the dev finish implementing it? By %s".formatted(syntax.reportPosition()));
         
     }
 
@@ -181,17 +216,17 @@ public class Interpreter {
             for(Node index : indices){
                 InterpreterDataType indexData = getIDT(index, locals);
                 if(!arrayData.containsKey(indexData.value))
-                    throw new IndexOutOfBoundsException(String.format("Index %s out of bounds for array %s", indexData.value, delete.target));
+                    throw new IndexOutOfBoundsException(String.format("Index %s out of bounds for array %s, by %s", indexData.value, delete.target, delete.reportPosition()));
                 arrayData.remove(indexData.value);
             }
         } else
-            throw new IllegalArgumentException("Cannot delete from non-array variable");
+            throw new IllegalArgumentException("Cannot delete from non-array variable, by %s".formatted(delete.reportPosition()));
 
-        return new ReturnType(ReturnType.Control.NORMAL);
+        return new ReturnType(ReturnType.Control.NORMAL, delete.reportPosition());
     }
 
     private ReturnType evaluateReturn(ASTnode.ReturnNode returnNode, HashMap<String, InterpreterDataType> locals){
-        return new ReturnType(getIDT(returnNode.value, locals).value);
+        return new ReturnType(getIDT(returnNode.value, locals).value, returnNode.reportPosition());
     }
     
     private ReturnType evaluateIf(ASTnode.IfNode ifNode, HashMap<String, InterpreterDataType> locals){
@@ -204,7 +239,7 @@ public class Interpreter {
         else if((elseNode = ifNode.getElse()).isPresent())
             return evaluateIf(elseNode.get(), locals);
 
-        return new ReturnType(ReturnType.Control.NORMAL);
+        return new ReturnType(ReturnType.Control.NORMAL, ifNode.reportPosition());
     }
 
     private ReturnType evaluateFor(ASTnode.ForNode forNode, HashMap<String, InterpreterDataType> locals){
@@ -234,14 +269,14 @@ public class Interpreter {
 
         }
 
-        return new ReturnType(ReturnType.Control.NORMAL);
+        return new ReturnType(ReturnType.Control.NORMAL, forNode.reportPosition());
     }
 
     private ReturnType evaluateForIn(ASTnode.ForNode forNode, HashMap<String, InterpreterDataType> locals){
         String memberName = forNode.getMember().getName();
         InterpreterDataType data = getIDT(forNode.getCollection(), locals);
         if(!(data instanceof InterpreterArrayDataType array))
-            throw new IllegalArgumentException("Cannot iterate over non-array");
+            throw new IllegalArgumentException("Cannot iterate over non-array, by %s".formatted(forNode.reportPosition()));
         BlockNode block = forNode.getStatements();
 
         HashMap<String, InterpreterDataType> scope = (locals == null) ? globalVariables : locals;
@@ -256,7 +291,7 @@ public class Interpreter {
                 return result;
         }
 
-        return new ReturnType(ReturnType.Control.NORMAL);
+        return new ReturnType(ReturnType.Control.NORMAL, forNode.reportPosition());
     }
 
     private ReturnType evaluateDoWhile(ASTnode.WhileNode whileNode, HashMap<String, InterpreterDataType> locals){
@@ -274,7 +309,7 @@ public class Interpreter {
             trueCase = asBoolean(condition.value);
         } while(trueCase);
 
-        return new ReturnType(ReturnType.Control.NORMAL);
+        return new ReturnType(ReturnType.Control.NORMAL, whileNode.reportPosition());
     }
 
     private ReturnType evaluateWhile(ASTnode.WhileNode whileNode, HashMap<String, InterpreterDataType> locals){
@@ -294,7 +329,7 @@ public class Interpreter {
             trueCase = asBoolean(condition.value);
         }
 
-        return new ReturnType(ReturnType.Control.NORMAL);
+        return new ReturnType(ReturnType.Control.NORMAL, whileNode.reportPosition());
     }
     
     private ReturnType evaluateBlock(BlockNode block, HashMap<String, InterpreterDataType> locals){
@@ -315,18 +350,22 @@ public class Interpreter {
         if(shouldRun)
             return evaluateStatements(block.getStatements(), locals);
         else
-            return new ReturnType(ReturnType.Control.NORMAL);
+            return new ReturnType(ReturnType.Control.NORMAL, block.getStatements().get(0).reportPosition());
     }
 
     private ReturnType evaluateStatements(List<StatementNode> statements, HashMap<String,InterpreterDataType> locals){
+        if(statements.isEmpty())
+            throw new IllegalArgumentException("Cannot evaluate empty statement list");
         ReturnType currentValue;
+        String position = statements.get(0).reportPosition(); // Intellij was scared this would stay unassigned, so...
         for(StatementNode statement : statements){
             currentValue = evaluateStatement(statement, locals);
             if(!currentValue.isType(ReturnType.Control.NORMAL)) // break, continue, return...
                 return currentValue;
+            position = statement.reportPosition();
         }
-
-        return new ReturnType(ReturnType.Control.NORMAL);
+        
+        return new ReturnType(ReturnType.Control.NORMAL, position);
     }
     
     private ReturnType evaluateCall(FunctionCallNode call, HashMap<String,InterpreterDataType> locals){
@@ -337,39 +376,42 @@ public class Interpreter {
         FunctionDefinitionNode func = functions.get(call.getName());
         
         if(func instanceof BuiltInFunctionDefinitionNode builtIn) {
-            return evaluateBuiltIn(builtIn, call.getArguments(), locals);
+            return evaluateBuiltIn(builtIn, call, locals);
         }
 
         HashMap<String,InterpreterDataType> scope = (locals == null) ? globalVariables : locals;
-        scope.putAll(collectArgs(func.getParameterNames(), call.getArguments(), locals));
+        scope.putAll(collectArgs(func.getName(), func.getParameterNames(), call.getArguments(), locals));
 
         return evaluateStatements(func.getStatements(), scope);
         
     }
     
-    private HashMap<String, InterpreterDataType> collectArgs(LinkedList<String> parameterNames, List<Node> arguments, HashMap<String,InterpreterDataType> locals) {
+    private HashMap<String, InterpreterDataType> collectArgs(String funcName, LinkedList<String> parameterNames, List<Node> arguments, HashMap<String,InterpreterDataType> locals) {
         // Built-in functions don't use this one, maybe could be refactored but the small differences are annoying enough to push that decision to later
 
         HashMap<String, InterpreterDataType> args = new HashMap<>();
-        
+
         Iterator<String> paramNameIterator = parameterNames.iterator();
-        if(arguments.size() > parameterNames.size())
-            throw new IllegalArgumentException("Too many arguments");
-        else if(arguments.size() < parameterNames.size())
-            throw new IllegalArgumentException("Too few arguments");
-        
-        for(Node param: arguments){
-            if(paramNameIterator.hasNext()){
-                args.put(paramNameIterator.next(), getIDT(param, locals));
-            } else
-                throw new RuntimeException("Too many arguments passed into function");
-        }
-        
+        if (arguments.size() < parameterNames.size())
+            throw new IllegalArgumentException("Too few arguments for %s".formatted(funcName));
+
+        HashMap<String, InterpreterDataType> array = new HashMap<>(); // This and i are for variadic arguments
+        int i = 1;
+        for (Node arg : arguments)
+            if (paramNameIterator.hasNext())
+                args.put(paramNameIterator.next(), getIDT(arg, locals));
+            else
+            // Variadic arguments
+                array.put(Integer.toString(i++), getIDT(arg, locals));
+            
+        if(!array.isEmpty())    
+            args.put(funcName, new InterpreterArrayDataType(array)); // Creates an array with the functions name holding all the variadic arguments. AWK is weird.
         return args;
     }
     
-    private ReturnType evaluateBuiltIn(BuiltInFunctionDefinitionNode builtIn, LinkedList<Node> argumentNodes, HashMap<String, InterpreterDataType> locals){
-        
+    private ReturnType evaluateBuiltIn(BuiltInFunctionDefinitionNode builtIn, FunctionCallNode call, HashMap<String, InterpreterDataType> locals){
+
+        LinkedList<Node> argumentNodes = call.getArguments();
         HashMap<String, InterpreterDataType> scope = (locals == null) ? globalVariables : locals;
         // Gather args
         HashMap<String,InterpreterDataType> args = new HashMap<>();
@@ -378,12 +420,15 @@ public class Interpreter {
         
         Iterator<Node> argNodeIterator = argumentNodes.iterator();
         Node currentNode;
-        
-        // Check every possible parameter set, validating that they match what was passed in as we collect arguments one by one
-        for(LinkedList<String> parameterSet : builtIn.getAcceptedParameterNames()){
+        if(builtIn.isVariadic()){
+            int i = 1;
+            while(argNodeIterator.hasNext()){
+                currentNode = argNodeIterator.next();
+                args.put(Integer.toString(i++), getIDT(currentNode, scope));
+            }
+        } else for(LinkedList<String> parameterSet : builtIn.getAcceptedParameterNames()){
             for(String parameter : parameterSet){
                 if(!argNodeIterator.hasNext()) {
-                    argNodeIterator = argumentNodes.iterator(); // Reset iterator
                     break; // This parameter set is invalid (too few arguments)
                 }
                 
@@ -409,8 +454,8 @@ public class Interpreter {
             }
         }
         
-        if(args.isEmpty())
-            throw new IllegalArgumentException("No valid parameter set found for built-in function. Double check parameter count and if there are any variable parameters expected");
+        if(args.isEmpty() && !builtIn.getParameterNames().isEmpty())
+            throw new IllegalArgumentException("No valid parameter set found for built-in function %s. Double check parameter count and if there are any variable parameters expected".formatted(builtIn.getName()));
         
         // Run code
         String output = builtIn.getExecute().apply(args);
@@ -419,16 +464,15 @@ public class Interpreter {
         for(String variableName : varToParam.keySet())
             scope.put(variableName, args.get(varToParam.get(variableName)));
         
-        return new ReturnType(output);
+        return new ReturnType(output, call.reportPosition());
     }
-    
     public InterpreterDataType getIDT(Node node, HashMap<String, InterpreterDataType> locals){
         if(node instanceof RegexNode)
             throw new RuntimeException("Regex literals are only valid in the condition of conditional control blocks, or passed into certain built-in functions"); // TODO: don't make yourself a liar
 
         // IntelliJ is suggesting I change this into some pattern switch statement thing, that isn't even normally supported by the java version I'm on lol.
         if (node instanceof AssignmentNode assignment) {
-            return evaluateAssignment(assignment, locals).expectData("Assignment as expression must result in a value");
+            return evaluateAssignment(assignment, locals).expectData("Assignment as expression must result in a value, by %s".formatted(assignment.reportPosition()));
         } else if (node instanceof ConstantNode<?> constant) {
             return evaluateConstant(constant);
         } else if (node instanceof FunctionCallNode functionCall) {
@@ -705,7 +749,12 @@ public class Interpreter {
     
     private ReturnType evaluateAssignment(AssignmentNode node, HashMap<String, InterpreterDataType> locals){
         String name = node.getName();
-        InterpreterDataType value = getIDT(node.getAssignedTo(), locals);
+        InterpreterDataType value;
+        try {
+            value = getIDT(node.getAssignedTo(), locals);
+        } catch (RuntimeException e){
+            throw new RuntimeException("Invalid assignment by %s, got exception:\n %s".formatted(node.reportPosition(), e));
+        }
         boolean postOperation;
         
         // Check to see if we're working with a post-operation, so we can return the correct value
@@ -727,23 +776,23 @@ public class Interpreter {
         } else if (globalVariables.containsKey(name)) {
             original = globalVariables.get(name);
         } else if(postOperation)
-            throw new RuntimeException(String.format("Variable %s not defined, cannot return value before assignment (post operation)", name));
+            throw new RuntimeException(String.format("Variable %s not defined, cannot return value before assignment (post operation). By %s", name, node.reportPosition()));
 
         Optional<Node> indexNode; // Used for both array and field references
         
         if(node.getTarget() instanceof FieldReferenceNode fieldReference){
         // Field assignment case (note: The order matters! Field references also fit the array case, so we sift them out first.)
             if((indexNode = fieldReference.getIndex()).isEmpty())
-                throw new RuntimeException("Field assignment requires index");
+                throw new RuntimeException("Field assignment requires index, by %s".formatted(node.reportPosition()));
             InterpreterDataType indexData = getIDT(indexNode.get(), locals);
             int index;
             try {
                 index = (int) Double.parseDouble(indexData.value); // parseDouble used because numbers are stored as doubles
             }catch(NumberFormatException e){
-                throw new IllegalArgumentException("Field index must be numeric");
+                throw new IllegalArgumentException("Field index must be numeric, by %s".formatted(node.reportPosition()));
             }
-            
-            lineManager.editField(index, value.value);
+            if(!lineManager.editField(index, value.value))
+                throw new IndexOutOfBoundsException(String.format("Index %d out of bounds for %d fields, by %s", index, Integer.parseInt(globalVariables.get("NF").value), node.reportPosition()));
         } else if((indexNode = node.getTarget().getIndex()).isPresent()){
         // Array assignment case
             HashMap<String, InterpreterDataType> newArray;
@@ -760,17 +809,17 @@ public class Interpreter {
         } else {
         // Normal assignment case
             if(original instanceof InterpreterArrayDataType arrayData)
-                throw new RuntimeException(String.format("Attempted to assign non-array value to array variable %s", name));
+                throw new RuntimeException(String.format("Attempted to assign non-array value to array variable %s, by %s", name, node.reportPosition()));
             scope.put(name, value);
-        }
+        } 
         
         if(postOperation) {
             if(original == null)
-                throw new RuntimeException("Post-operation failed to get original value, isn't this impossible?");
-            return new ReturnType(original.value, false);
+                throw new RuntimeException("Post-operation failed to get original value, isn't this impossible? By %s".formatted(node.reportPosition()));
+            return new ReturnType(original.value, false, node.reportPosition());
         }
         else 
-            return new ReturnType(value.value, false); // Maybe refactor value.value away
+            return new ReturnType(value.value, false, node.reportPosition()); // Maybe refactor value.value away
     }
     
     private InterpreterDataType evaluateConstant(ConstantNode<?> node){
@@ -794,9 +843,8 @@ public class Interpreter {
 
             // Format args with separator
             StringBuilder output = new StringBuilder();
-            for (int j = 0; j < i - 1; j++) { // Stops one element early, see comment below
-                output.append(args.poll()).append(Interpreter.getGlobalVariable("FS").get().value); // certainly present
-            }
+            for (int j = 1; j < i - 1; j++) // Stops one element early, see comment below
+                output.append(args.poll()).append(globalVariables.get("FS").value);
             output.append(args.poll()); // Last one doesn't get separator
 
             System.out.print(output);
@@ -826,8 +874,8 @@ public class Interpreter {
                 i++;
             }
 
-            System.out.printf(format, args);
-            return String.format(format, args);
+            System.out.printf(format, args.toArray());
+            return String.format(format, args.toArray());
 
         };
 

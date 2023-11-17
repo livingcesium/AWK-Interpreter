@@ -4,15 +4,22 @@ import java.util.LinkedList;
 public class FunctionCallNode extends Node implements StatementNode{
     private String name;
     private Collection<Node> arguments;
-    
-    public FunctionCallNode(String name, Collection<Node> arguments){
+    private String position;
+    public FunctionCallNode(String name, Collection<Node> arguments, String position){
         this.name = name;
         this.arguments = arguments;
+        this.position = position;
     }
     
+    public FunctionCallNode(String name, String position){
+        this(name, new LinkedList<>(), position);
+    }
+    
+    public FunctionCallNode(String name, Collection<Node> arguments){
+        this(name, arguments, "[debug node]");
+    }
     public FunctionCallNode(String name){
-        this.name = name;
-        this.arguments = new LinkedList<>();
+        this(name, new LinkedList<>());
     }
     
     public String getName(){
@@ -21,6 +28,10 @@ public class FunctionCallNode extends Node implements StatementNode{
     
     public LinkedList<Node> getArguments(){
         return new LinkedList<>(arguments);
+    }
+    
+    public String reportPosition(){
+        return position;
     }
     
     public String toString(){

@@ -22,7 +22,7 @@ public class BuiltInFunctionDefinitionNode extends FunctionDefinitionNode{
     
     // Variadic if the last bool is true, no arguments if it's false.
     public BuiltInFunctionDefinitionNode(String name, Function<HashMap<String,InterpreterDataType>,String> execute, boolean variadic) {
-        super(name, new LinkedList<>());
+        super(name, new LinkedList<>(), new LinkedList<>());
         this.execute = execute;
         this.variadic = variadic;
     }

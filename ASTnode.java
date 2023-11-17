@@ -7,17 +7,18 @@ public abstract class ASTnode extends Node implements StatementNode{
     protected Node condition;
     protected BlockNode statements;
     
-    ASTnode(){
-        this.condition = new ConstantNode<Boolean>(true);
-        this.statements = null;
+    private String position;
+    
+    ASTnode(String position){
+        this(new ConstantNode<Boolean>(true), null, position);
     }
-    ASTnode(BlockNode statements){
-        this.condition = new ConstantNode<Boolean>(true);
-        this.statements = statements;
+    ASTnode(BlockNode statements, String position){
+        this(new ConstantNode<Boolean>(true), statements, position);
     }
-    ASTnode(Node condition, BlockNode statements){
+    ASTnode(Node condition, BlockNode statements, String position){
         this.condition = condition;
         this.statements = statements;
+        this.position = position;
     }
     
     public Node getCondition(){
@@ -27,18 +28,33 @@ public abstract class ASTnode extends Node implements StatementNode{
     public BlockNode getStatements(){
         return statements;
     }
+    
+    public String reportPosition(){
+        return position;
+    }
     public static class IfNode extends ASTnode {
         private Optional<IfNode> elseNode = Optional.empty();
         
+        
+        IfNode(BlockNode statements, String position) {
+            super(statements, position);
+        }
         IfNode(BlockNode statements) {
-            super(statements);
+            this(statements, "[debug node]");
+        }
+        IfNode(Node condition, BlockNode statements, String position) {
+            super(condition, statements, position);
         }
         IfNode(Node condition, BlockNode statements) {
-            super(condition, statements);
+            this(condition, statements, "[debug node]");
         }
-        IfNode(Node condition, BlockNode statements, IfNode elseNode) {
-            super(condition, statements);
+        IfNode(Node condition, BlockNode statements, IfNode elseNode, String position) {
+            super(condition, statements, position);
             this.elseNode = Optional.of(elseNode);
+        }
+        
+        IfNode(Node condition, BlockNode statements, IfNode elseNode) {
+            this(condition, statements, elseNode, "[debug node]");
         }
         
         public void setElse(IfNode next) {
@@ -70,13 +86,19 @@ public abstract class ASTnode extends Node implements StatementNode{
     public static class WhileNode extends ASTnode {
         
         boolean doWhile = false;
+        WhileNode(Node condition, BlockNode statements, String position) {
+            super(condition, statements, position);
+        }
         WhileNode(Node condition, BlockNode statements) {
-            super(condition, statements);
+            this(condition, statements, "[debug node]");
         }
         
-        WhileNode(Node condition, BlockNode statements, boolean doWhile) {
-            super(condition, statements);
+        WhileNode(Node condition, BlockNode statements, boolean doWhile, String position) {
+            super(condition, statements, position);
             this.doWhile = doWhile;
+        }
+        WhileNode(Node condition, BlockNode statements, boolean doWhile) {
+            this(condition, statements, doWhile, "[debug node]");
         }
         
         public String toString(){
@@ -102,20 +124,25 @@ public abstract class ASTnode extends Node implements StatementNode{
         private VariableReferenceNode member;
         private Node collection;
         
-        ForNode(Node init, Node condition, Node update,BlockNode statements) {
-            super(condition, statements);
+        ForNode(Node init, Node condition, Node update,BlockNode statements, String position) {
+            super(condition, statements, position);
             this.init = init;
             this.update = update;
             this.forIn = false;
         }
+        ForNode(Node init, Node condition, Node update,BlockNode statements) {
+            this(init, condition, update, statements, "[debug node]");
+        }
         
-        ForNode(VariableReferenceNode member, Node collection, BlockNode statements){
-            super(statements);
+        ForNode(VariableReferenceNode member, Node collection, BlockNode statements, String position) {
+            super(statements, position);
             this.member = member;
             this.collection = collection;
             this.forIn = true;
         }
-
+        ForNode(VariableReferenceNode member, Node collection, BlockNode statements) {
+            this(member, collection, statements, "[debug node]");
+        }
         public Node getInit() {
             return init;
         }
@@ -155,8 +182,11 @@ public abstract class ASTnode extends Node implements StatementNode{
     }
     
     public static class ContinueNode extends ASTnode {
+        ContinueNode(String position) {
+            super(position);
+        }
         ContinueNode() {
-            super();
+            this("[debug node]");
         }
 
         public String toString(){
@@ -173,8 +203,11 @@ public abstract class ASTnode extends Node implements StatementNode{
     }
     
     public static class BreakNode extends ASTnode {
+        BreakNode(String position) {
+            super(position);
+        }
         BreakNode() {
-            super();
+            this("[debug node]");
         }
         
         public String toString(){
@@ -194,16 +227,22 @@ public abstract class ASTnode extends Node implements StatementNode{
         VariableReferenceNode target;
         Collection<Node> indices;
         
-        DeleteNode(VariableReferenceNode target) {
-            super();
+        DeleteNode(VariableReferenceNode target, String position) {
+            super(position);
             this.target = target;
             this.indices = List.of();
         }
+        DeleteNode(VariableReferenceNode target) {
+            this(target, "[debug node]");
+        }
         
-        DeleteNode(VariableReferenceNode target, Collection<Node> indices) {
-            super();
+        DeleteNode(VariableReferenceNode target, Collection<Node> indices, String position) {
+            super(position);
             this.target = target;
             this.indices = indices;
+        }
+        DeleteNode(VariableReferenceNode target, Collection<Node> indices) {
+            this(target, indices, "[debug node]");
         }
         
         public String toString(){
@@ -222,9 +261,12 @@ public abstract class ASTnode extends Node implements StatementNode{
     
     public static class ReturnNode extends ASTnode {
         public final Node value;
-        public ReturnNode(Node value) {
-            super();
+        public ReturnNode(Node value, String position) {
+            super(position);
             this.value = value;
+        }
+        public ReturnNode(Node value) {
+            this(value, "[debug node]");
         }
         
         public String toString(){

@@ -193,13 +193,13 @@ public class Parser {
         if(tokens.matchAndRemove(Token.TokenType.CONTINUE).isEmpty())
             return Optional.empty();
         acceptSeperators();
-        return Optional.of(new ASTnode.ContinueNode());
+        return Optional.of(new ASTnode.ContinueNode(reportPosition()));
     }
     private Optional<StatementNode> parseBreak(){
         if(tokens.matchAndRemove(Token.TokenType.BREAK).isEmpty())
             return Optional.empty();
         acceptSeperators();
-        return Optional.of(new ASTnode.BreakNode());
+        return Optional.of(new ASTnode.BreakNode(reportPosition()));
     }
     private Optional<StatementNode> parseDelete(){
         if(tokens.matchAndRemove(Token.TokenType.DELETE).isEmpty())
@@ -210,7 +210,7 @@ public class Parser {
             throw new RuntimeException(String.format("Expected variable name after \"delete\", reached %s", reportPosition()));
         
         if(tokens.matchAndRemove(Token.TokenType.LEFTBRACKET).isEmpty())
-            return Optional.of(new ASTnode.DeleteNode(new VariableReferenceNode(nameToken.get().getValue())));
+            return Optional.of(new ASTnode.DeleteNode(new VariableReferenceNode(nameToken.get().getValue()), reportPosition()));
         
         Optional<Node> index;
         LinkedList<Node> indices = new LinkedList<>();
@@ -221,7 +221,7 @@ public class Parser {
         } while(tokens.matchAndRemove(Token.TokenType.COMMA).isPresent());
         
         acceptSeperators();
-        return Optional.of(new ASTnode.DeleteNode(new VariableReferenceNode(nameToken.get().getValue()), indices));
+        return Optional.of(new ASTnode.DeleteNode(new VariableReferenceNode(nameToken.get().getValue()), indices, reportPosition()));
     }
     
     private Optional<StatementNode> parseReturn(){
@@ -233,7 +233,7 @@ public class Parser {
             throw new RuntimeException(String.format("Could not parse return value, reached %s", reportPosition()));
         
         acceptSeperators();
-        return Optional.of(new ASTnode.ReturnNode(value.get()));
+        return Optional.of(new ASTnode.ReturnNode(value.get(), reportPosition()));
     }
     private Optional<StatementNode> parseFor(){
         if(tokens.matchAndRemove(Token.TokenType.FOR).isEmpty())
@@ -266,7 +266,7 @@ public class Parser {
             acceptSeperators();
 
             statements = parseBlock();
-            return Optional.of(new ASTnode.ForNode(left, membership.getRight().get(), statements)); // Freebie get() here should be safe
+            return Optional.of(new ASTnode.ForNode(left, membership.getRight().get(), statements, reportPosition())); // Freebie get() here should be safe
         } else {
             Optional<Node> init;
             Optional<Node> condition;
@@ -288,7 +288,7 @@ public class Parser {
             acceptSeperators();
 
             statements = parseBlock();
-            return Optional.of(new ASTnode.ForNode(init.get(), condition.get(), update.get(), statements));
+            return Optional.of(new ASTnode.ForNode(init.get(), condition.get(), update.get(), statements, reportPosition()));
         }
     }
     
@@ -312,7 +312,7 @@ public class Parser {
             throw new RuntimeException(String.format("Expected \")\" after condition for do-while loop, reached %s", reportPosition()));
         acceptSeperators();
         
-        return Optional.of(new ASTnode.WhileNode(condition.get(), statements, true));
+        return Optional.of(new ASTnode.WhileNode(condition.get(), statements, true, reportPosition()));
     }
     private Optional<StatementNode> parseWhile(){
         if(tokens.matchAndRemove(Token.TokenType.WHILE).isEmpty())
@@ -331,7 +331,7 @@ public class Parser {
         
         BlockNode statements = parseBlock();
 
-        return Optional.of(new ASTnode.WhileNode(condition.get(), statements));
+        return Optional.of(new ASTnode.WhileNode(condition.get(), statements, reportPosition()));
         
             
     }
@@ -345,7 +345,7 @@ public class Parser {
         BlockNode statements = parseBlock();
         
         
-        ASTnode.IfNode ifNode = new ASTnode.IfNode(condition.get(), statements);
+        ASTnode.IfNode ifNode = new ASTnode.IfNode(condition.get(), statements, reportPosition());
         ASTnode.IfNode elseNode;
         
         Optional<Node> nextCondition;
@@ -355,9 +355,9 @@ public class Parser {
             
             nextCondition = getIfHeader();
             if(finalElse = nextCondition.isPresent()) // Save the result
-                elseNode = new ASTnode.IfNode(nextCondition.get(), parseBlock());
+                elseNode = new ASTnode.IfNode(nextCondition.get(), parseBlock(), reportPosition());
             else 
-                elseNode = new ASTnode.IfNode(new ConstantNode<Boolean>(true), parseBlock());
+                elseNode = new ASTnode.IfNode(new ConstantNode<Boolean>(true), parseBlock(), reportPosition());
             
             currentNode.setElse(elseNode);
             currentNode = elseNode;
@@ -720,17 +720,17 @@ public class Parser {
             AssignmentNode finalAssignment;
             Boolean isGenericAssignment = op == OperationNode.Operation.NOTHING;
             if(!isGenericAssignment)
-                finalAssignment = new AssignmentNode(target, new OperationNode(target, op, value));
+                finalAssignment = new AssignmentNode(target, new OperationNode(target, op, value), reportPosition());
             else
-                finalAssignment = new AssignmentNode(target, value);
+                finalAssignment = new AssignmentNode(target, value, reportPosition());
             while (!targets.isEmpty()) {
                 // the pattern goes backwards as ... ?= target ?= (lastTarget ?= lastValue) [ ?= is generic assignment ]
                 target = targets.pop().getVariableReferenceOrThrow(String.format("Cannot assign to an non-variable, encountered by %s", reportPosition()));
                 // only the tail of this chain can be a non-variable. Think about it! Otherwise, a constant is being assigned (garbage nonsense).
                 if(!isGenericAssignment)
-                    finalAssignment = new AssignmentNode(target, new OperationNode(target, op, finalAssignment));
+                    finalAssignment = new AssignmentNode(target, new OperationNode(target, op, finalAssignment), reportPosition());
                 else
-                    finalAssignment = new AssignmentNode(target, finalAssignment);
+                    finalAssignment = new AssignmentNode(target, finalAssignment, reportPosition());
             }
             return Optional.of(finalAssignment);
         } else {
@@ -755,11 +755,11 @@ public class Parser {
         
         if(tokens.matchAndRemove(Token.TokenType.INCREMENT).isPresent()) {
             op = OperationNode.Operation.POSTINCREMENT;
-            return Optional.of(new AssignmentNode(target, new OperationNode(target, op)));
+            return Optional.of(new AssignmentNode(target, new OperationNode(target, op), reportPosition()));
         } else if(tokens.matchAndRemove(Token.TokenType.DECREMENT).isPresent()){
             op = OperationNode.Operation.POSTDECREMENT;
             
-            return Optional.of(new AssignmentNode(target, new OperationNode(target, op)));
+            return Optional.of(new AssignmentNode(target, new OperationNode(target, op), reportPosition()));
         } else
             return Optional.empty();
     }
@@ -843,7 +843,7 @@ public class Parser {
                                 new AssignmentNode(
                                         temp.get().getVariableReferenceOrThrow(String.format("Cannot assign to an non-variable, encountered by %s", reportPosition())),
                                         new OperationNode(temp.get(), OperationNode.Operation.PREINCREMENT)
-                                )
+                                , reportPosition())
                         );
                     }
                     case DECREMENT -> {
@@ -854,7 +854,7 @@ public class Parser {
                                 new AssignmentNode(
                                         temp.get().getVariableReferenceOrThrow(String.format("Cannot assign to an non-variable, encountered by %s", reportPosition())),
                                         new OperationNode(temp.get(), OperationNode.Operation.PREDECREMENT)
-                                )
+                                , reportPosition())
                         );
                     }
                 }
@@ -895,7 +895,7 @@ public class Parser {
         if(type == null)
             return Optional.empty();
 
-        boolean parenthesized = tokens.matchAndRemove(Token.TokenType.LEFTPAREN).isEmpty();
+        boolean parenthesized = tokens.matchAndRemove(Token.TokenType.LEFTPAREN).isPresent();
 
         LinkedList<Node> arguments = getArguments();
 
@@ -903,7 +903,7 @@ public class Parser {
             throw new RuntimeException(String.format("Expected \")\" after function call, reached %s", reportPosition()));
         acceptSeperators();
         
-        return Optional.of(new FunctionCallNode(type.toString().toLowerCase(), arguments));
+        return Optional.of(new FunctionCallNode(type.toString().toLowerCase(), arguments, reportPosition()));
         
     }
     
@@ -920,7 +920,7 @@ public class Parser {
             throw new RuntimeException(String.format("Expected \")\" after function call, reached %s", reportPosition()));
         
         acceptSeperators();
-        return Optional.of(new FunctionCallNode(name, arguments));
+        return Optional.of(new FunctionCallNode(name, arguments, reportPosition()));
     }
     
     private LinkedList<Node> getArguments(){

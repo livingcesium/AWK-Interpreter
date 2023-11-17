@@ -8,29 +8,48 @@ public class ReturnType extends InterpreterDataType{
         RETURN
     }
     public final Control controlType;
+    public final String position;
 
-    public ReturnType(Control controlType){
+    public ReturnType(Control controlType, String position){
         super(null);
         this.controlType = controlType;
+        this.position = position;
+    }
+    public ReturnType(Control controlType){
+        this(controlType, "[debug node]");
     }
 
-    public ReturnType(String value){
+    public ReturnType(String value, String position){
         super(value);
         this.controlType = Control.RETURN;
+        this.position = position;
+    }
+    public ReturnType(String value){
+        this(value, "[debug node]");
     }
 
-    public ReturnType(String value, boolean returning){
+    public ReturnType(String value, boolean returning, String position){
         super(value);
         if(returning)
             this.controlType = Control.RETURN;
         else
             this.controlType = Control.NORMAL;
+        this.position = position;
+    }
+    public ReturnType(String value, boolean returning){
+        this(value, returning, "[debug node]");
     }
 
     public InterpreterDataType expectData(String errorMessage){
         if(this.value == null)
             throw new ValueNotFoundException(errorMessage);
         return new InterpreterDataType(this.value);
+    }
+    
+    public ReturnType rejectLoopControl(String errorMessage){
+        if(this.controlType == Control.BREAK || this.controlType == Control.CONTINUE)
+            throw new RuntimeException(errorMessage + " by " + position);
+        return this;
     }
 
     public boolean isType(Control controlType){

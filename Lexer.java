@@ -1,5 +1,6 @@
 import java.util.HashMap;
 import java.util.LinkedList;
+import java.util.List;
 import java.util.Map;
 public class Lexer {
     private final StringHandler inputReader;
@@ -15,6 +16,9 @@ public class Lexer {
         knownSymbolPairs = new HashMap<String, Token.TokenType>();
         populateKnownSymbols();
         inputReader = new StringHandler(document);
+    }
+    public Lexer(List<String> lines){
+        this(String.join("\n", lines));
     }
     
     public LinkedList<Token> lex(){
@@ -152,8 +156,6 @@ public class Lexer {
                 if(type == Token.TokenType.SEPERATOR){
                     lineCol[COL]++;
                     token = new Token(lineCol[LINE], lineCol[COL], type);
-                    lineCol[LINE]++;
-                    lineCol[COL] = 0;
                 } else {
                     lineCol[COL]++;
                     token = new Token(lineCol[LINE], lineCol[COL], type, symbol);
@@ -226,7 +228,6 @@ public class Lexer {
         knownSymbols.put("/", Token.TokenType.DIVIDE);
         knownSymbols.put("%", Token.TokenType.MODULO);
         knownSymbols.put(";", Token.TokenType.SEPERATOR);
-        knownSymbols.put("\\n", Token.TokenType.SEPERATOR);
         knownSymbols.put("|", Token.TokenType.PIPE);
         knownSymbols.put(",", Token.TokenType.COMMA);
     }
@@ -263,7 +264,17 @@ public class Lexer {
                 c = inputReader.getChar();
                 if(String.valueOf(c).matches("^[a-z]$")){ //check for lowercase letters, for cases like \t \n \... etc
                     lineCol[COL]++; //the \abc bit mentioned in the jUnit tests
-                    literal.append("\\").append(c);
+                    switch (c) {
+                        case 'n' -> literal.append('\n');
+                        case 't' -> literal.append('\t');
+                        case 'r' -> literal.append('\r');
+                        case 'b' -> literal.append('\b');
+                        case 'f' -> literal.append('\f');
+                        case '\\' -> literal.append('\\');
+                        case '\'' -> literal.append('\'');
+                        case '\"' -> literal.append('\"');
+                        default -> literal.append("\\").append(c);
+                    }
                 }else{
                     lineCol[COL]++;
                     literal.append(c);
