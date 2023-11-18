@@ -66,7 +66,7 @@ public class Lexer {
                 Token token;
                 if((token = processSymbol()) != null)
                     output.add(token);
-                else throw new RuntimeException(String.format("Unrecognized Character %s, at [%d, %d]", c, lineCol[LINE], lineCol[COL]));
+                else throw new AwkSyntaxException(String.format("Unrecognized Character %s, at [%d, %d]", c, lineCol[LINE], lineCol[COL]));
             }
                 
         }
@@ -167,7 +167,7 @@ public class Lexer {
                 return null;
             
         } else 
-            throw new RuntimeException(String.format("End of document reached at [%d,%d] while processing symbol", lineCol[LINE], lineCol[COL]));
+            throw new AwkSyntaxException(String.format("End of document reached at [%d,%d] while processing symbol", lineCol[LINE], lineCol[COL]));
         
     }
     

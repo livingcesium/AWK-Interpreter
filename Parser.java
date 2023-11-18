@@ -34,7 +34,7 @@ public class Parser {
             if(!parseFunction() && !parseAction()){
                 // try to parse function, try to parse action
                 // if there is neither, throw a fit
-                throw new RuntimeException(String.format("expected either function or action after %s", reportPosition()));
+                throw new AwkSyntaxException(String.format("expected either function or action after %s", reportPosition()));
             }
             
         }
@@ -63,7 +63,7 @@ public class Parser {
             while(tokens.matchAndRemove(Token.TokenType.COMMA).isPresent()){
                 acceptSeperators();
                 if((maybeToken = tokens.matchAndRemove(Token.TokenType.WORD)).isEmpty())
-                    throw new RuntimeException(String.format("expected parameter name after comma, reached %s", reportPosition()));
+                    throw new AwkSyntaxException(String.format("expected parameter name after comma, reached %s", reportPosition()));
                 
                 paramNames.add(maybeToken.get().getValue());
             }
@@ -93,7 +93,7 @@ public class Parser {
         if (tokens.matchAndRemove(Token.TokenType.LEFTBRACE).isEmpty()){
             Optional<StatementNode> statementNode;
             if((statementNode = parseStatement()).isEmpty())
-                throw new RuntimeException(String.format("Could not parse one line statement, reached %s", reportPosition()));
+                throw new AwkSyntaxException(String.format("Could not parse one line statement, reached %s", reportPosition()));
             statements.add(statementNode.get());
             return new BlockNode(statements);
         }
@@ -207,7 +207,7 @@ public class Parser {
         
         Optional<Token> nameToken;
         if((nameToken = tokens.matchAndRemove(Token.TokenType.WORD)).isEmpty())
-            throw new RuntimeException(String.format("Expected variable name after \"delete\", reached %s", reportPosition()));
+            throw new AwkSyntaxException(String.format("Expected variable name after \"delete\", reached %s", reportPosition()));
         
         if(tokens.matchAndRemove(Token.TokenType.LEFTBRACKET).isEmpty())
             return Optional.of(new ASTnode.DeleteNode(new VariableReferenceNode(nameToken.get().getValue()), reportPosition()));
@@ -216,7 +216,7 @@ public class Parser {
         LinkedList<Node> indices = new LinkedList<>();
         do{
             if((index = parseOperation()).isEmpty())
-                throw new RuntimeException(String.format("Could not parse index for array, reached %s", reportPosition()));
+                throw new AwkSyntaxException(String.format("Could not parse index for array, reached %s", reportPosition()));
             indices.add(index.get());
         } while(tokens.matchAndRemove(Token.TokenType.COMMA).isPresent());
         
@@ -230,7 +230,7 @@ public class Parser {
         
         Optional<Node> value;
         if((value = parseOperation()).isEmpty())
-            throw new RuntimeException(String.format("Could not parse return value, reached %s", reportPosition()));
+            throw new AwkSyntaxException(String.format("Could not parse return value, reached %s", reportPosition()));
         
         acceptSeperators();
         return Optional.of(new ASTnode.ReturnNode(value.get(), reportPosition()));
@@ -239,7 +239,7 @@ public class Parser {
         if(tokens.matchAndRemove(Token.TokenType.FOR).isEmpty())
             return Optional.empty();
         if(tokens.matchAndRemove(Token.TokenType.LEFTPAREN).isEmpty())
-            throw new RuntimeException(String.format("Expected \"(\" after \"for\", reached %s", reportPosition()));
+            throw new AwkSyntaxException(String.format("Expected \"(\" after \"for\", reached %s", reportPosition()));
         
         // Seek "in"
         Optional<Token> seeker;
@@ -255,14 +255,14 @@ public class Parser {
         if(forIn) {
             Optional<Node> operation = parseOperation(); // Should get to parseArrayMembership()
             if(operation.isEmpty())
-                throw new RuntimeException(String.format("Could not parse for-in array, reached %s", reportPosition()));
+                throw new AwkSyntaxException(String.format("Could not parse for-in array, reached %s", reportPosition()));
             OperationNode membership = operation.get().getOperationOrThrow(String.format("Invalid expression in for-in array definition, reached %s", reportPosition()));
             if(membership.isRightOp(OperationNode.Operation.IN))
                 throw new IllegalArgumentException(String.format("Cannot use multidimensional index in for-in array definition, reached %s", reportPosition()));
             VariableReferenceNode left = membership.getLeft().getVariableReferenceOrThrow("Cannot use non-variable in for-in array definition, reached %s");
 
             if(tokens.matchAndRemove(Token.TokenType.RIGHTPAREN).isEmpty())
-                throw new RuntimeException(String.format("Expected \")\" after for loop's increment, reached %s", reportPosition()));
+                throw new AwkSyntaxException(String.format("Expected \")\" after for loop's increment, reached %s", reportPosition()));
             acceptSeperators();
 
             statements = parseBlock();
@@ -273,18 +273,18 @@ public class Parser {
             Optional<Node> update;
 
             if((init = parseOperation()).isEmpty())
-                throw new RuntimeException(String.format("Could not parse operation in for loop's assignment, reached %s", reportPosition()));
+                throw new AwkSyntaxException(String.format("Could not parse operation in for loop's assignment, reached %s", reportPosition()));
             if(tokens.matchAndRemove(Token.TokenType.SEPERATOR).isEmpty())
-                throw new RuntimeException(String.format("Expected \";\" after for loop's assignment, reached %s", reportPosition()));
+                throw new AwkSyntaxException(String.format("Expected \";\" after for loop's assignment, reached %s", reportPosition()));
             if((condition = parseOperation()).isEmpty())
-                throw new RuntimeException(String.format("Could not parse operation in for loop's condition, reached %s", reportPosition()));
+                throw new AwkSyntaxException(String.format("Could not parse operation in for loop's condition, reached %s", reportPosition()));
             if(tokens.matchAndRemove(Token.TokenType.SEPERATOR).isEmpty())
-                throw new RuntimeException(String.format("Expected \";\" after for loop's condition, reached %s", reportPosition()));
+                throw new AwkSyntaxException(String.format("Expected \";\" after for loop's condition, reached %s", reportPosition()));
             if((update = parseOperation()).isEmpty())
-                throw new RuntimeException(String.format("Could not parse operation in for loop's increment, reached %s", reportPosition()));
+                throw new AwkSyntaxException(String.format("Could not parse operation in for loop's increment, reached %s", reportPosition()));
             
             if(tokens.matchAndRemove(Token.TokenType.RIGHTPAREN).isEmpty())
-                throw new RuntimeException(String.format("Expected \")\" after for loop's increment, reached %s", reportPosition()));
+                throw new AwkSyntaxException(String.format("Expected \")\" after for loop's increment, reached %s", reportPosition()));
             acceptSeperators();
 
             statements = parseBlock();
@@ -299,17 +299,17 @@ public class Parser {
         BlockNode statements = parseBlock();
         
         if(tokens.matchAndRemove(Token.TokenType.WHILE).isEmpty())
-            throw new RuntimeException(String.format("Expected \"while\" after \"do\", reached %s", reportPosition()));
+            throw new AwkSyntaxException(String.format("Expected \"while\" after \"do\", reached %s", reportPosition()));
         
         if(tokens.matchAndRemove(Token.TokenType.LEFTPAREN).isEmpty())
-            throw new RuntimeException(String.format("Expected \"(\" after \"while\", reached %s", reportPosition()));
+            throw new AwkSyntaxException(String.format("Expected \"(\" after \"while\", reached %s", reportPosition()));
         
         Optional<Node> condition;
         if((condition = parseOperation()).isEmpty())
-            throw new RuntimeException(String.format("Could not parse condition for do-while loop, reached %s", reportPosition()));
+            throw new AwkSyntaxException(String.format("Could not parse condition for do-while loop, reached %s", reportPosition()));
         
         if(tokens.matchAndRemove(Token.TokenType.RIGHTPAREN).isEmpty())
-            throw new RuntimeException(String.format("Expected \")\" after condition for do-while loop, reached %s", reportPosition()));
+            throw new AwkSyntaxException(String.format("Expected \")\" after condition for do-while loop, reached %s", reportPosition()));
         acceptSeperators();
         
         return Optional.of(new ASTnode.WhileNode(condition.get(), statements, true, reportPosition()));
@@ -319,14 +319,14 @@ public class Parser {
             return Optional.empty();
         
         if(tokens.matchAndRemove(Token.TokenType.LEFTPAREN).isEmpty())
-            throw new RuntimeException(String.format("Expected \"(\" after \"while\", reached %s", reportPosition()));
+            throw new AwkSyntaxException(String.format("Expected \"(\" after \"while\", reached %s", reportPosition()));
         
         Optional<Node> condition;
         if((condition = parseOperation()).isEmpty())
-            throw new RuntimeException(String.format("Could not parse condition for while loop, reached %s", reportPosition()));
+            throw new AwkSyntaxException(String.format("Could not parse condition for while loop, reached %s", reportPosition()));
         
         if(tokens.matchAndRemove(Token.TokenType.RIGHTPAREN).isEmpty())
-            throw new RuntimeException(String.format("Expected \")\" after condition for while loop, reached %s", reportPosition()));
+            throw new AwkSyntaxException(String.format("Expected \")\" after condition for while loop, reached %s", reportPosition()));
         acceptSeperators();
         
         BlockNode statements = parseBlock();
@@ -373,13 +373,13 @@ public class Parser {
         Optional<Node> condition;
         
         if(tokens.matchAndRemove(Token.TokenType.LEFTPAREN).isEmpty())
-            throw new RuntimeException(String.format("Expected \"(\" after \"if\", reached %s", reportPosition()));
+            throw new AwkSyntaxException(String.format("Expected \"(\" after \"if\", reached %s", reportPosition()));
 
         if((condition = parseOperation()).isEmpty())
-            throw new RuntimeException(String.format("Could not parse condition for if statement, reached %s", reportPosition()));
+            throw new AwkSyntaxException(String.format("Could not parse condition for if statement, reached %s", reportPosition()));
         
         if(tokens.matchAndRemove(Token.TokenType.RIGHTPAREN).isEmpty())
-            throw new RuntimeException(String.format("Expected \")\" after condition for if statement, reached %s", reportPosition()));
+            throw new AwkSyntaxException(String.format("Expected \")\" after condition for if statement, reached %s", reportPosition()));
         acceptSeperators();
         
         return condition;
@@ -438,21 +438,21 @@ public class Parser {
         while(tokens.matchAndRemove(Token.TokenType.QUESTION).isPresent()){
             
             if((node = parseOperation()).isEmpty())
-                throw new RuntimeException(String.format("Could not parse true case in ternary expression, reached %s", reportPosition()));
+                throw new AwkSyntaxException(String.format("Could not parse true case in ternary expression, reached %s", reportPosition()));
             nodes.push(node.get());
             
             if(tokens.matchAndRemove(Token.TokenType.COLON).isEmpty())
-                throw new RuntimeException(String.format("Expected \":\" in ternary expression, reached %s", reportPosition()));
+                throw new AwkSyntaxException(String.format("Expected \":\" in ternary expression, reached %s", reportPosition()));
             
             if((node = parseOperation()).isEmpty())
-                throw new RuntimeException(String.format("Could not parse false case in ternary expression, reached %s", reportPosition()));
+                throw new AwkSyntaxException(String.format("Could not parse false case in ternary expression, reached %s", reportPosition()));
             nodes.push(node.get());
         }
         if(nodes.size() == 1) // No ternary expressions found
             return Optional.empty();
         
         if(nodes.size() % 3 != 0)
-            throw new RuntimeException(String.format("Ternary expression has an incorrect number of expressions (%d), reached %s", nodes.size(),reportPosition()));
+            throw new AwkSyntaxException(String.format("Ternary expression has an incorrect number of expressions (%d), reached %s", nodes.size(),reportPosition()));
         
         Node falseCase = nodes.pop(); // ... : condition ? trueCase : falseCase will be ..., condition, trueCase, falseCase with falseCase popped first
         Node trueCase = nodes.pop();
@@ -471,7 +471,7 @@ public class Parser {
     private Optional<Node> parseArrayMembership(Optional<Node> first, boolean multiDimensional){
         
         if(first.isEmpty())
-            throw new RuntimeException(String.format("Could not parse array index, reached %s", reportPosition()));
+            throw new AwkSyntaxException(String.format("Could not parse array index, reached %s", reportPosition()));
         Optional<Node> nextIndex;
         
         if((nextIndex = first.get().getNext()).isEmpty() && multiDimensional)
@@ -482,7 +482,7 @@ public class Parser {
         
         Optional<Node> node;
         if((node = parseBottomLevel()).isEmpty()) 
-            throw new RuntimeException(String.format("Could not parse array, reached %s", reportPosition()));
+            throw new AwkSyntaxException(String.format("Could not parse array, reached %s", reportPosition()));
 
         
         VariableReferenceNode targetArray = node.get().getVariableReferenceOrThrow(String.format("Cannot do array membership check on non-variable, encountered by %s", reportPosition()));
@@ -511,7 +511,7 @@ public class Parser {
         
         while(op != OperationNode.Operation.NOTHING){
             if((right = parseOperation()).isEmpty())
-                throw new RuntimeException(String.format("Could not parse right-hand side of logical expression, reached %s", reportPosition()));
+                throw new AwkSyntaxException(String.format("Could not parse right-hand side of logical expression, reached %s", reportPosition()));
             
             left = Optional.of(new OperationNode(left.get(), op, right.get()));
             
@@ -544,7 +544,7 @@ public class Parser {
                 OperationNode.Operation op = symbolToOperation.get(type);
                 Optional<Node> next;
                 if((next = parseBottomLevel()).isEmpty())
-                    throw new RuntimeException(String.format("Expected expression for operation %s, encountered by %s", op, reportPosition()));
+                    throw new AwkSyntaxException(String.format("Expected expression for operation %s, encountered by %s", op, reportPosition()));
                 return Optional.of(new OperationNode(first.get(), op, next.get()));
             }
         }
@@ -606,14 +606,14 @@ public class Parser {
                 finalOperation = new OperationNode(currentNode.get(), op, nextNode.get());
                 currentNode = Optional.of(finalOperation);
             } else 
-                throw new RuntimeException(String.format("Expected expression for operation %s, encountered by %s", op, reportPosition()));
+                throw new AwkSyntaxException(String.format("Expected expression for operation %s, encountered by %s", op, reportPosition()));
         
         } while ((tokens.matchAndRemove(type)).isPresent());
         
         return Optional.of(finalOperation);
     }
     private Optional<Node> parseStringConcat(Optional<Node> first){
-        if(first.isEmpty() || first.get().tryGetConstant(String.class).isEmpty() || first.get().isVariableReference())
+        if(first.isEmpty() || (first.get().tryGetConstant(String.class).isEmpty() && !first.get().isVariableReference()))
             return Optional.empty();
 
         OperationNode finalOperation;
@@ -634,7 +634,7 @@ public class Parser {
                 entered = true;
 
             if(current.get().tryGetConstant(String.class).isEmpty() || first.get().isVariableReference())
-                throw new RuntimeException(String.format("Expected string or variable for string concatenation, encountered by %s", reportPosition()));
+                throw new AwkSyntaxException(String.format("Expected string or variable for string concatenation, encountered by %s", reportPosition()));
 
             current = next;
         }
@@ -677,13 +677,13 @@ public class Parser {
             type = Token.TokenType.POWER;
 
             if ((currentNode = parseOperation()).isEmpty()) // Get right hand side
-                throw new RuntimeException(String.format("Could not parse right side of operation %s, encountered by %s", op, reportPosition()));
+                throw new AwkSyntaxException(String.format("Could not parse right side of operation %s, encountered by %s", op, reportPosition()));
             targets.push(currentNode.get());
 
             // Add all subjects of exponentiation to a stack for later
             while (tokens.matchAndRemove(type).isPresent()) {
                 if ((currentNode = parseOperation()).isEmpty())
-                    throw new RuntimeException(String.format("Could not parse a right-hand side in chain of operation %s, encountered by %s", op, reportPosition()));
+                    throw new AwkSyntaxException(String.format("Could not parse a right-hand side in chain of operation %s, encountered by %s", op, reportPosition()));
                 targets.push(currentNode.get());
             }
 
@@ -701,13 +701,13 @@ public class Parser {
                 return Optional.empty(); // Soft fail if an assignment is not found
 
             if ((currentNode = parseOperation()).isEmpty()) // Get right hand side
-                throw new RuntimeException(String.format("Could not parse right side of assignment %s, encountered by %s", op, reportPosition()));
+                throw new AwkSyntaxException(String.format("Could not parse right side of assignment %s, encountered by %s", op, reportPosition()));
             targets.push(currentNode.get());
 
             // If there are more, add all subjects of assignment to a stack for later
             while (tokens.matchAndRemove(type).isPresent()) {
                 if ((currentNode = parseOperation()).isEmpty())
-                    throw new RuntimeException(String.format("Could not parse a right-hand side in chain of assignment %s, encountered by %s", op == OperationNode.Operation.NOTHING ? "": op , reportPosition()));
+                    throw new AwkSyntaxException(String.format("Could not parse a right-hand side in chain of assignment %s, encountered by %s", op == OperationNode.Operation.NOTHING ? "": op , reportPosition()));
                 targets.push(currentNode.get());
             }
         }
@@ -790,14 +790,19 @@ public class Parser {
                         return Optional.of(new ConstantNode<String>(token.get().getValue()));
                     }
                     case NUMBER -> {
-                        return Optional.of(new ConstantNode<Double>(Double.valueOf(token.get().getValue())));
+                        try {
+                            return Optional.of(new ConstantNode<Integer>(Integer.valueOf(token.get().getValue())));
+                        } catch (NumberFormatException e) {
+                            return Optional.of(new ConstantNode<Double>(Double.valueOf(token.get().getValue())));
+                        }
+
                     }
                     case REGEXLITERAL -> {
                         return Optional.of(new RegexNode(token.get().getValue()));
                     }
                     case LEFTPAREN -> {
                         if((temp = parseOperation()).isEmpty())
-                            throw new RuntimeException(String.format("Could not parse parenthesized operation, reached %s", reportPosition()));
+                            throw new AwkSyntaxException(String.format("Could not parse parenthesized operation, reached %s", reportPosition()));
                         
                         // If we get a list of stuff, it might be a parenthesized list of indices for an array membership check
                         Optional<Node> current = temp;
@@ -805,12 +810,12 @@ public class Parser {
                         while(tokens.matchAndRemove(Token.TokenType.COMMA).isPresent()){
                             next = parseOperation();
                             if(next.isEmpty())
-                                throw new RuntimeException(String.format("Could not parse expression in parenthesized list, reached %s", reportPosition()));
+                                throw new AwkSyntaxException(String.format("Could not parse expression in parenthesized list, reached %s", reportPosition()));
                             current.get().setNext(next.get());
                             current = next;
                         }
                         if(tokens.matchAndRemove(Token.TokenType.RIGHTPAREN).isEmpty())
-                            throw new RuntimeException(String.format("Expected closing parenthesis for expression, reached %s", reportPosition()));
+                            throw new AwkSyntaxException(String.format("Expected closing parenthesis for expression, reached %s", reportPosition()));
 
                         if(temp.get().getNext().isPresent()) // We have a list
                             return parseArrayMembership(temp, true);
@@ -819,25 +824,25 @@ public class Parser {
                     }
                     case NOT -> {
                         if((temp = parseOperation()).isEmpty())
-                            throw new RuntimeException(String.format("Could not parse NOT operation, reached %s", reportPosition()));
+                            throw new AwkSyntaxException(String.format("Could not parse NOT operation, reached %s", reportPosition()));
 
                         return Optional.of(new OperationNode(temp.get(), OperationNode.Operation.NOT));
                     }
                     case MINUS -> {
                         if((temp = parseOperation()).isEmpty())
-                            throw new RuntimeException(String.format("Could not parse subtraction operation, reached %s", reportPosition()));
+                            throw new AwkSyntaxException(String.format("Could not parse subtraction operation, reached %s", reportPosition()));
                         
                         return Optional.of(new OperationNode(temp.get(), OperationNode.Operation.UNARYNEG));
                     }
                     case PLUS -> {
                         if((temp = parseOperation()).isEmpty())
-                            throw new RuntimeException(String.format("Could not parse addition operation, reached %s", reportPosition()));
+                            throw new AwkSyntaxException(String.format("Could not parse addition operation, reached %s", reportPosition()));
 
                         return Optional.of(new OperationNode(temp.get(), OperationNode.Operation.UNARYPOS));
                     }
                     case INCREMENT -> {
                         if((temp = parseOperation()).isEmpty())
-                            throw new RuntimeException(String.format("Could not parse increment operation, reached %s", reportPosition()));
+                            throw new AwkSyntaxException(String.format("Could not parse increment operation, reached %s", reportPosition()));
 
                         return Optional.of(
                                 new AssignmentNode(
@@ -848,7 +853,7 @@ public class Parser {
                     }
                     case DECREMENT -> {
                         if((temp = parseOperation()).isEmpty())
-                            throw new RuntimeException(String.format("Could not parse decrement operation, reached %s", reportPosition()));
+                            throw new AwkSyntaxException(String.format("Could not parse decrement operation, reached %s", reportPosition()));
 
                         return Optional.of(
                                 new AssignmentNode(
@@ -898,12 +903,13 @@ public class Parser {
         boolean parenthesized = tokens.matchAndRemove(Token.TokenType.LEFTPAREN).isPresent();
 
         LinkedList<Node> arguments = getArguments();
+        acceptSeperators();
 
         if(parenthesized && tokens.matchAndRemove(Token.TokenType.RIGHTPAREN).isEmpty())
-            throw new RuntimeException(String.format("Expected \")\" after function call, reached %s", reportPosition()));
+            throw new AwkSyntaxException(String.format("Expected \")\" after function call, reached %s", reportPosition()));
         acceptSeperators();
         
-        return Optional.of(new FunctionCallNode(type.toString().toLowerCase(), arguments, reportPosition()));
+        return Optional.of(new FunctionCallNode(type.toString().toLowerCase().replace("func", ""), arguments, reportPosition()));
         
     }
     
@@ -915,9 +921,10 @@ public class Parser {
             return Optional.empty();
         
         LinkedList<Node> arguments = getArguments();
-        
+        acceptSeperators();
+
         if(tokens.matchAndRemove(Token.TokenType.RIGHTPAREN).isEmpty())
-            throw new RuntimeException(String.format("Expected \")\" after function call, reached %s", reportPosition()));
+            throw new AwkSyntaxException(String.format("Expected \")\" after function call, reached %s", reportPosition()));
         
         acceptSeperators();
         return Optional.of(new FunctionCallNode(name, arguments, reportPosition()));
@@ -932,9 +939,8 @@ public class Parser {
         
         if(!arguments.isEmpty()) // If we have one, loop for more
             while(tokens.matchAndRemove(Token.TokenType.COMMA).isPresent()){
-                if((argument = parseOperation()).isEmpty()) {
-                    throw new RuntimeException(String.format("Expected argument after comma, reached %s", reportPosition()));
-                }
+                if((argument = parseOperation()).isEmpty())
+                    throw new AwkSyntaxException(String.format("Expected argument after comma, reached %s", reportPosition()));
                 arguments.add(argument.get());
             }
         
@@ -948,7 +954,7 @@ public class Parser {
         if(tokens.matchAndRemove(Token.TokenType.DOLLAR).isPresent()){
             value = parseBottomLevel();
             if(value.isEmpty())
-                throw new RuntimeException(String.format("Could not evaluate lvalue, reached %s", reportPosition()));
+                throw new AwkSyntaxException(String.format("Expected lvalue, reached %s", reportPosition()));
             return Optional.of(new FieldReferenceNode(value.get()));
         }
         
@@ -965,10 +971,10 @@ public class Parser {
             // Array Reference
             if(tokens.matchAndRemove(Token.TokenType.LEFTBRACKET).isPresent()){
                 if((value = parseOperation()).isEmpty())
-                    throw new RuntimeException(String.format("Could not evaluate index, reached %s", reportPosition()));
+                    throw new AwkSyntaxException(String.format("Could not evaluate index for array, reached %s", reportPosition()));
                 
                 if(tokens.matchAndRemove(Token.TokenType.RIGHTBRACKET).isEmpty())
-                    throw new RuntimeException(String.format("Missing \"]\", Unclosed array reference? Reached %s", reportPosition()));
+                    throw new AwkSyntaxException(String.format("Missing \"]\", Unclosed array reference? Reached %s", reportPosition()));
                 
                 reference = new VariableReferenceNode(nameToken.get().getValue(), value.get());
 
@@ -986,4 +992,6 @@ public class Parser {
             return Optional.empty();
         
     }
+
+
 }

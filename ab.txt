@@ -1,0 +1,6 @@
+only As!
+
+BBBBBBBB
+dogs
+BBBBAA
+AAAAAAAA

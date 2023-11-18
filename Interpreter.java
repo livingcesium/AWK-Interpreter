@@ -58,18 +58,12 @@ public class Interpreter {
             return true;
         }
         
-        private String getNext(){
+        protected String getNext(){
             // NR++ (Number of records)
             globalVariables.put("NR", new InterpreterDataType(Integer.toString(Integer.parseInt(globalVariables.get("NR").value) + 1)));
             // FNR ++ (File Number of Records)
             globalVariables.put("FNR", new InterpreterDataType(Integer.toString(Integer.parseInt(globalVariables.get("FNR").value) + 1)));
             return this.lines.remove(0);
-        }
-        
-        public String peekNext(){
-            if(lines.isEmpty())
-                throw new IndexOutOfBoundsException("No more lines to peek");
-            return this.lines.get(0);
         }
         
     }
@@ -180,9 +174,9 @@ public class Interpreter {
             if(returned.isType(ReturnType.Control.RETURN) || returned.isType(ReturnType.Control.NORMAL))
                 return new ReturnType(ReturnType.Control.NORMAL, functionCall.reportPosition());
             else
-                throw new RuntimeException("Function did not return control properly. Did you use break or continue outside of a loop? By %s".formatted(functionCall.reportPosition()));
+                throw new AwkInterpreterException("Function did not return control properly. Did you use break or continue outside of a loop? By %s".formatted(functionCall.reportPosition()));
         } else 
-            throw new RuntimeException("Expected statement, by %s".formatted(statement.reportPosition()));
+            throw new AwkInterpreterException("Expected statement, by %s".formatted(statement.reportPosition()));
     }
     
     private ReturnType evaluateSyntax(ASTnode syntax, HashMap<String, InterpreterDataType> locals){
@@ -216,11 +210,11 @@ public class Interpreter {
             for(Node index : indices){
                 InterpreterDataType indexData = getIDT(index, locals);
                 if(!arrayData.containsKey(indexData.value))
-                    throw new IndexOutOfBoundsException(String.format("Index %s out of bounds for array %s, by %s", indexData.value, delete.target, delete.reportPosition()));
+                    throw new AwkIndexOutOfBoundsException(String.format("Index %s out of bounds for array %s, by %s", indexData.value, delete.target, delete.reportPosition()));
                 arrayData.remove(indexData.value);
             }
         } else
-            throw new IllegalArgumentException("Cannot delete from non-array variable, by %s".formatted(delete.reportPosition()));
+            throw new AwkIllegalArgumentException("Cannot delete from non-array variable, by %s".formatted(delete.reportPosition()));
 
         return new ReturnType(ReturnType.Control.NORMAL, delete.reportPosition());
     }
@@ -276,7 +270,7 @@ public class Interpreter {
         String memberName = forNode.getMember().getName();
         InterpreterDataType data = getIDT(forNode.getCollection(), locals);
         if(!(data instanceof InterpreterArrayDataType array))
-            throw new IllegalArgumentException("Cannot iterate over non-array, by %s".formatted(forNode.reportPosition()));
+            throw new AwkIllegalArgumentException("Cannot iterate over non-array, by %s".formatted(forNode.reportPosition()));
         BlockNode block = forNode.getStatements();
 
         HashMap<String, InterpreterDataType> scope = (locals == null) ? globalVariables : locals;
@@ -340,7 +334,7 @@ public class Interpreter {
         if((condition = block.getCondition()).isPresent()){
             if(condition.get() instanceof RegexNode regex)
             // Translates RegexNode[regex] into OperationNode[$0 ~ regex]
-                conditionData = getIDT(new OperationNode(new FieldReferenceNode(new ConstantNode<Double>(0.0)), OperationNode.Operation.MATCH, regex), locals);
+                conditionData = getIDT(new OperationNode(new FieldReferenceNode(new ConstantNode<Integer>(0)), OperationNode.Operation.MATCH, regex), locals);
             else
                 conditionData = getIDT(condition.get(), locals);
 
@@ -355,7 +349,7 @@ public class Interpreter {
 
     private ReturnType evaluateStatements(List<StatementNode> statements, HashMap<String,InterpreterDataType> locals){
         if(statements.isEmpty())
-            throw new IllegalArgumentException("Cannot evaluate empty statement list");
+            throw new AwkInterpreterException("Expected statements, empty code blocks are invalid.");
         ReturnType currentValue;
         String position = statements.get(0).reportPosition(); // Intellij was scared this would stay unassigned, so...
         for(StatementNode statement : statements){
@@ -371,7 +365,7 @@ public class Interpreter {
     private ReturnType evaluateCall(FunctionCallNode call, HashMap<String,InterpreterDataType> locals){
         
         if(!functions.containsKey(call.getName()))
-            throw new RuntimeException(String.format("Function %s not defined", call.getName()));
+            throw new AwkInterpreterException(String.format("Function %s not defined, by %s", call.getName(), call.reportPosition()));
         
         FunctionDefinitionNode func = functions.get(call.getName());
         
@@ -380,20 +374,21 @@ public class Interpreter {
         }
 
         HashMap<String,InterpreterDataType> scope = (locals == null) ? globalVariables : locals;
-        scope.putAll(collectArgs(func.getName(), func.getParameterNames(), call.getArguments(), locals));
+        scope.putAll(collectArgs(func.getName(), func.getParameterNames(), call, locals));
 
         return evaluateStatements(func.getStatements(), scope);
         
     }
     
-    private HashMap<String, InterpreterDataType> collectArgs(String funcName, LinkedList<String> parameterNames, List<Node> arguments, HashMap<String,InterpreterDataType> locals) {
+    private HashMap<String, InterpreterDataType> collectArgs(String funcName, LinkedList<String> parameterNames, FunctionCallNode call, HashMap<String,InterpreterDataType> locals) {
         // Built-in functions don't use this one, maybe could be refactored but the small differences are annoying enough to push that decision to later
 
         HashMap<String, InterpreterDataType> args = new HashMap<>();
+        LinkedList<Node> arguments = call.getArguments();
 
         Iterator<String> paramNameIterator = parameterNames.iterator();
         if (arguments.size() < parameterNames.size())
-            throw new IllegalArgumentException("Too few arguments for %s".formatted(funcName));
+            throw new AwkIllegalArgumentException("Too few arguments for %s, by %s".formatted(funcName, call.reportPosition()));
 
         HashMap<String, InterpreterDataType> array = new HashMap<>(); // This and i are for variadic arguments
         int i = 1;
@@ -434,14 +429,22 @@ public class Interpreter {
                 
                 currentNode = argNodeIterator.next();
                 
-                if(parameter.matches("^var")){ 
+                if(parameter.matches("^var.*")){
                 // For built-in functions, I made all mutable parameters start with var
                     if(!(currentNode instanceof VariableReferenceNode variableRef))
                         break; // This parameter set is invalid (non-variable passed to var parameter)
                     varToParam.put(variableRef.getName(), parameter);
+                    try{
+                        args.put(parameter, evaluateVariableRef(variableRef, scope));
+                    } catch (AwkInterpreterException ignored){
+                        args.put(parameter, new InterpreterDataType(""));
+                        // TODO: see if the empty string breaks anything
+                    }
+                } else {
+                    if (currentNode instanceof RegexNode regex)
+                        currentNode = regex.getGeneralized();
+                    args.put(parameter, getIDT(currentNode, scope));
                 }
-                
-                args.put(parameter, getIDT(currentNode, scope));
             }
             
             if(args.size() == parameterSet.size())
@@ -455,7 +458,7 @@ public class Interpreter {
         }
         
         if(args.isEmpty() && !builtIn.getParameterNames().isEmpty())
-            throw new IllegalArgumentException("No valid parameter set found for built-in function %s. Double check parameter count and if there are any variable parameters expected".formatted(builtIn.getName()));
+            throw new AwkIllegalArgumentException("No valid parameter set found for built-in function %s. Double check parameter count and if there are any variable parameters expected. By %s".formatted(builtIn.getName(), call.reportPosition()));
         
         // Run code
         String output = builtIn.getExecute().apply(args);
@@ -526,7 +529,7 @@ public class Interpreter {
                     try{
                         return new InterpreterDataType(Double.toString(-Double.parseDouble(leftData.value)));
                     } catch (NumberFormatException e){
-                        throw new IllegalArgumentException("UNARYNEG operator requires numeric operand");
+                        throw new AwkIllegalArgumentException("UNARYNEG operator requires numeric operand");
                     }
                 }
                 case UNARYPOS -> { // TODO: maybe make this less like eating glass
@@ -550,18 +553,18 @@ public class Interpreter {
                     try{
                         return new InterpreterDataType(Double.toString(Double.parseDouble(leftData.value) + 1));
                     } catch (NumberFormatException e){
-                        throw new IllegalArgumentException("INCREMENT operator requires numeric operand");
+                        throw new AwkIllegalArgumentException("INCREMENT operator requires numeric operand");
                     }
                 }
                 case POSTDECREMENT, PREDECREMENT -> {
                     try{
                         return new InterpreterDataType(Double.toString(Double.parseDouble(leftData.value) - 1));
                     } catch (NumberFormatException e){
-                        throw new IllegalArgumentException("DECREMENT operator requires numeric operand");
+                        throw new AwkIllegalArgumentException("DECREMENT operator requires numeric operand");
                     }
                 }
                 default -> {
-                    throw new RuntimeException("This single operand operation is not implemented yet");
+                    throw new RuntimeException("Unrecognized single operand operation");
                 }
             }
         }
@@ -628,12 +631,12 @@ public class Interpreter {
             }
             case AND -> {
                 if(leftBool == null)
-                    throw new IllegalArgumentException("AND operator requires boolean operands");
+                    throw new AwkIllegalArgumentException("AND operator requires boolean operands");
                 return new InterpreterDataType(booleanAsString(leftBool && rightBool));
             }
             case OR -> {
                 if(leftBool == null)
-                    throw new IllegalArgumentException("OR operator requires boolean operands");
+                    throw new AwkIllegalArgumentException("OR operator requires boolean operands");
                 return new InterpreterDataType(booleanAsString(leftBool || rightBool));
             }
             case MATCH -> {
@@ -644,7 +647,7 @@ public class Interpreter {
             }
             case IN -> {
                 if(!(rightData instanceof InterpreterArrayDataType array))
-                    throw new IllegalArgumentException("IN operator requires array operand");
+                    throw new AwkIllegalArgumentException("IN operator requires array operand");
                 return new InterpreterDataType(booleanAsString(array.getArrayValue().containsKey(leftData.value)));
             }
             case CONCATENATION -> {
@@ -654,37 +657,37 @@ public class Interpreter {
                 if(leftDouble != null)
                     return new InterpreterDataType(Double.toString(leftDouble + rightDouble));
                 else 
-                    throw new IllegalArgumentException("ADD operator requires numeric operand");
+                    throw new AwkIllegalArgumentException("ADD operator requires numeric operand");
             }
             case SUBTRACT -> {
                 if(leftDouble != null)
                     return new InterpreterDataType(Double.toString(leftDouble - rightDouble));
                 else 
-                    throw new IllegalArgumentException("SUBTRACT operator requires numeric operand");
+                    throw new AwkIllegalArgumentException("SUBTRACT operator requires numeric operand");
             }
             case MULTIPLY -> {
                 if(leftDouble != null)
                     return new InterpreterDataType(Double.toString(leftDouble * rightDouble));
                 else 
-                    throw new IllegalArgumentException("MULTIPLY operator requires numeric operand");
+                    throw new AwkIllegalArgumentException("MULTIPLY operator requires numeric operand");
             }
             case DIVIDE -> {
                 if(leftDouble != null)
                     return new InterpreterDataType(Double.toString(leftDouble / rightDouble));
                 else 
-                    throw new IllegalArgumentException("DIVIDE operator requires numeric operand");
+                    throw new AwkIllegalArgumentException("DIVIDE operator requires numeric operand");
             }
             case MODULO -> {
                 if(leftDouble != null)
                     return new InterpreterDataType(Double.toString(leftDouble % rightDouble));
                 else 
-                    throw new IllegalArgumentException("MODULO operator requires numeric operand");
+                    throw new AwkIllegalArgumentException("MODULO operator requires numeric operand");
             }
             case EXPONENT -> {
                 if(leftDouble != null)
                     return new InterpreterDataType(Double.toString(Math.pow(leftDouble, rightDouble)));
                 else 
-                    throw new IllegalArgumentException("EXPONENTIATION operator requires numeric operand");
+                    throw new AwkIllegalArgumentException("EXPONENTIATION operator requires numeric operand");
             }
             default -> {
                 throw new RuntimeException("Operation not implemented yet");
@@ -700,13 +703,13 @@ public class Interpreter {
         try {
             fieldIndex = (int) Double.parseDouble(indexData.value); // any decimal value is truncated
         } catch (NumberFormatException e){
-            throw new IllegalArgumentException("Field index must be numeric");
+            throw new AwkIllegalArgumentException("Field index must be numeric");
         }
         
         if(fieldIndex < 0)
-            throw new IllegalArgumentException("Field index must be positive");
+            throw new AwkIllegalArgumentException("Field index must be positive");
         if(fieldIndex > Integer.parseInt(globalVariables.get("NF").value))
-            throw new IndexOutOfBoundsException(String.format("Index %d out of bounds for %d fields", fieldIndex, Integer.parseInt(globalVariables.get("NF").value)));
+            throw new AwkIndexOutOfBoundsException(String.format("Index %d out of bounds for %d fields", fieldIndex, Integer.parseInt(globalVariables.get("NF").value)));
         
         return globalVariables.get("$" + fieldIndex);
     }
@@ -729,19 +732,28 @@ public class Interpreter {
         else if(globalVariables.containsKey(name)) {
             variableData = globalVariables.get(name);
         } else
-            throw new RuntimeException(String.format("Variable %s not defined", name));
-        
+            throw new AwkInterpreterException(String.format("Variable %s not defined", name));
+        String indexValue;
         // Handle the array (or field reference) case
         if((index = node.getIndex()).isPresent()){
             if(variableData instanceof InterpreterArrayDataType arrayData){
                 InterpreterDataType indexData = getIDT(index.get(), scope);
-                HashMap<String, InterpreterDataType> array = arrayData.getArrayValue();
-                if(!array.containsKey(indexData.value))
-                    throw new IndexOutOfBoundsException(String.format("Index %s out of bounds for array %s", indexData.value, name));
+                try{
+                    indexValue = Double.parseDouble(indexData.value) + "";
+                    String[] split = indexValue.split("\\.");
+                    if(Double.parseDouble(split[1]) == 0)
+                        indexValue = split[0]; // Truncate decimal if it's 0
+                } catch (NumberFormatException e){
+                    indexValue = indexData.value;
+                }
 
-                return array.get(indexData.value);
+                HashMap<String, InterpreterDataType> array = arrayData.getArrayValue();
+                if(!array.containsKey(indexValue))
+                    throw new AwkIndexOutOfBoundsException(String.format("Index %s out of bounds for array %s", indexValue, name));
+
+                return array.get(indexValue);
             } else 
-                throw new RuntimeException(String.format("Attempted to make array reference to non-array variable %s", name));
+                throw new AwkInterpreterException(String.format("Attempted to make array reference to non-array variable %s", name));
         }
         
         return variableData;
@@ -753,7 +765,7 @@ public class Interpreter {
         try {
             value = getIDT(node.getAssignedTo(), locals);
         } catch (RuntimeException e){
-            throw new RuntimeException("Invalid assignment by %s, got exception:\n %s".formatted(node.reportPosition(), e));
+            throw new AwkInterpreterException("Invalid assignment by %s, got exception:\n %s".formatted(node.reportPosition(), e));
         }
         boolean postOperation;
         
@@ -776,23 +788,23 @@ public class Interpreter {
         } else if (globalVariables.containsKey(name)) {
             original = globalVariables.get(name);
         } else if(postOperation)
-            throw new RuntimeException(String.format("Variable %s not defined, cannot return value before assignment (post operation). By %s", name, node.reportPosition()));
+            throw new AwkInterpreterException(String.format("Variable %s not defined, cannot return value before assignment (post operation). By %s", name, node.reportPosition()));
 
         Optional<Node> indexNode; // Used for both array and field references
         
         if(node.getTarget() instanceof FieldReferenceNode fieldReference){
         // Field assignment case (note: The order matters! Field references also fit the array case, so we sift them out first.)
             if((indexNode = fieldReference.getIndex()).isEmpty())
-                throw new RuntimeException("Field assignment requires index, by %s".formatted(node.reportPosition()));
+                throw new AwkInterpreterException("Field assignment requires index, by %s".formatted(node.reportPosition()));
             InterpreterDataType indexData = getIDT(indexNode.get(), locals);
             int index;
             try {
                 index = (int) Double.parseDouble(indexData.value); // parseDouble used because numbers are stored as doubles
             }catch(NumberFormatException e){
-                throw new IllegalArgumentException("Field index must be numeric, by %s".formatted(node.reportPosition()));
+                throw new AwkIllegalArgumentException("Field index must be numeric, by %s".formatted(node.reportPosition()));
             }
             if(!lineManager.editField(index, value.value))
-                throw new IndexOutOfBoundsException(String.format("Index %d out of bounds for %d fields, by %s", index, Integer.parseInt(globalVariables.get("NF").value), node.reportPosition()));
+                throw new AwkIndexOutOfBoundsException(String.format("Index %d out of bounds for %d fields, by %s", index, Integer.parseInt(globalVariables.get("NF").value), node.reportPosition()));
         } else if((indexNode = node.getTarget().getIndex()).isPresent()){
         // Array assignment case
             HashMap<String, InterpreterDataType> newArray;
@@ -809,13 +821,13 @@ public class Interpreter {
         } else {
         // Normal assignment case
             if(original instanceof InterpreterArrayDataType arrayData)
-                throw new RuntimeException(String.format("Attempted to assign non-array value to array variable %s, by %s", name, node.reportPosition()));
+                throw new AwkInterpreterException(String.format("Attempted to assign non-array value to array variable %s, by %s", name, node.reportPosition()));
             scope.put(name, value);
         } 
         
         if(postOperation) {
             if(original == null)
-                throw new RuntimeException("Post-operation failed to get original value, isn't this impossible? By %s".formatted(node.reportPosition()));
+                throw new AwkInterpreterException("Post-operation failed to get original value, isn't this impossible? By %s".formatted(node.reportPosition()));
             return new ReturnType(original.value, false, node.reportPosition());
         }
         else 
@@ -864,7 +876,7 @@ public class Interpreter {
             if(array.containsKey(Integer.toString(i))){
                 format = array.get(Integer.toString(i++)).value;
             } else {
-                throw new IllegalArgumentException("printf requires a format string");
+                throw new AwkIllegalArgumentException("printf requires a format string");
             }
 
             // get remaining args
@@ -887,10 +899,10 @@ public class Interpreter {
             if(args.isEmpty())
                 return lineManager.handleNextLine() ? "1" : "0";
             else if(!args.containsKey("var"))
-                throw new IllegalArgumentException("getline requires either no arguments, or a variable to store into");
+                throw new AwkIllegalArgumentException("getline requires either no arguments, or a variable to store into");
             
             try {
-                args.put("var", new InterpreterDataType(lineManager.peekNext()));
+                args.put("var", new InterpreterDataType(lineManager.getNext()));
                 return "1";
             } catch (IndexOutOfBoundsException e){
                 return "0";
@@ -961,28 +973,29 @@ public class Interpreter {
 
             // Regex matcher gets our match index for free
             Matcher matcher = Pattern.compile(regex).matcher(target);
-            
-            if(args.containsKey("varArray")){
-                
-                if(!(args.get("varArray") instanceof InterpreterArrayDataType arrayData))
-                    throw new IllegalArgumentException("Match requires either an array to store into, or no third argument");
-                
-                HashMap<String, InterpreterDataType> extractedArray = arrayData.getArrayValue();
-                int i = 1; // 1-indexed
-                while(matcher.find())
-                // Fill the array with every valid match
-                    extractedArray.put(Integer.toString(i++), new InterpreterDataType(matcher.group()));
-                
-                if(i == 1)
-                // If we didn't find any matches (i is untouched)
-                    return "0";
-                
-                args.put("varArray", new InterpreterArrayDataType(extractedArray));
-            } else if(!matcher.find())
-            // No output array case: fail if we can't find a match
+
+            if(!matcher.find())
+                // No matches, return 0
                 return "0";
+            int firstMatchAt = matcher.start();
+
+
+            if(args.containsKey("varArray")){
+                HashMap<String, InterpreterDataType> extractedArray;
+                if(!(args.get("varArray") instanceof InterpreterArrayDataType arrayData))
+                    extractedArray = new HashMap<>();
+                else
+                    extractedArray = arrayData.getArrayValue();
+                int i = 1; // 1-indexed
+
+                for(int j = 0; j <= matcher.groupCount(); j++) //
+                // Fill the array with groups
+                    extractedArray.put(Integer.toString(i++), new InterpreterDataType(matcher.group(j)));
+
+                args.put("varArray", new InterpreterArrayDataType(extractedArray));
+            }
             
-            return Integer.toString(matcher.start() + 1); // 1-indexed
+            return Integer.toString(firstMatchAt + 1); // 1-indexed
         };
         
         functions.put("match", new BuiltInFunctionDefinitionNode("match", executeMatch, List.of(
@@ -1029,11 +1042,11 @@ public class Interpreter {
             // ^ Get length arg (as int) or default to length of string
             
             if(length < 0 || length > string.length())
-                throw new IndexOutOfBoundsException("Substring length must be positive and less than the length of the original string");
+                throw new AwkIndexOutOfBoundsException("Substring length must be positive and less than the length of the original string");
 
             return string.substring(start - 1, length + 1); // 1-indexed, the length arg is exclusive
         };
-        
+
         functions.put("substr", new BuiltInFunctionDefinitionNode("substr", executeSubstr, List.of(
                 List.of("string", "start", "length"),
                 List.of("string", "start")
@@ -1092,8 +1105,36 @@ public class Interpreter {
     private static String booleanAsString(Boolean bool){
         return bool ? "1" : "0";
     }
-    
-    private static class IncompatibleTypeException extends RuntimeException {
+
+    private static String numberToString(Number number){
+        if(number instanceof Double doubleNumber)
+            return doubleNumber.toString();
+        else if(number instanceof Integer intNumber)
+            return intNumber.toString();
+        else
+            throw new RuntimeException("Unknown number type");
+    }
+
+
+    private static class AwkInterpreterException extends RuntimeException {
+        public AwkInterpreterException(String message){
+            super(message);
+        }
+    }
+
+    private static class AwkIndexOutOfBoundsException extends AwkInterpreterException {
+        public AwkIndexOutOfBoundsException(String message){
+            super(message);
+        }
+    }
+
+    private static class AwkIllegalArgumentException extends AwkInterpreterException {
+        public AwkIllegalArgumentException(String message){
+            super(message);
+        }
+    }
+
+    private static class IncompatibleTypeException extends AwkInterpreterException {
         public IncompatibleTypeException(String message){
             super(message);
         }

@@ -35,6 +35,15 @@ public class BuiltInFunctionDefinitionNode extends FunctionDefinitionNode{
         while(acceptedParameters.hasNext()){
             overload(new LinkedList<String>(acceptedParameters.next()));
         }
+
+        // Sorting the arg list based on their size in descending order
+        this.acceptedParameterNames.sort(new Comparator<List<String>>() {
+            @Override
+            public int compare(List<String> o1, List<String> o2) {
+                return Integer.compare(o2.size(), o1.size()); // Note the order of o2 and o1 for descending order
+            }
+        });
+
         this.execute = execute;
         // not variadic, parameters are named (or empty)
     }
