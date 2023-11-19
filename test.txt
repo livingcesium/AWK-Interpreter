@@ -1,3 +1,0 @@
-# Check the JUnit test cases for more tests
-function func(a, b){
-}

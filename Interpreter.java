@@ -867,7 +867,7 @@ public class Interpreter {
 
         // Printf
         Function<HashMap<String,InterpreterDataType>,String> executePrintf = (HashMap<String,InterpreterDataType> array) -> {
-            LinkedList<String> args = new LinkedList<>();
+            LinkedList<Object> args = new LinkedList<>();
 
             int i = 1;
             String format;
@@ -885,6 +885,36 @@ public class Interpreter {
                     args.add(data);
                 i++;
             }
+
+            // Give args the right types (if possible) so that the formatting at the end doesn't fail
+
+            Pattern pattern = Pattern.compile("%[sdfegGoxXcu]"); // all kinds of %s, %d, %f, etc. that I felt like implementing
+            LinkedList<String> formatArgs = new LinkedList<>();
+            Matcher matcher = pattern.matcher(format);
+            while(matcher.find())
+                formatArgs.add(matcher.group());
+
+            i = 0;
+            for (String currentFormat : formatArgs) {
+                switch (currentFormat) {
+                    case "%d", "%i", "%x", "%X", "%o" -> {
+                        args.set(i, Integer.parseInt(args.get(i).toString()));
+                    }
+                    case "%u" -> { // %u doesn't exist in java so we fudge it
+                        long longValue = Long.parseLong(args.get(i).toString());
+                        args.set(i, Long.toUnsignedString(longValue));
+                        format = format.replaceAll("%u", "%s");
+                    }
+                    case "%f", "%e", "%E", "%g", "%G" -> {
+                        args.set(i, String.format(currentFormat, Double.parseDouble(args.get(i).toString())));
+                    }
+                    case "%c" -> {
+                        args.set(i, (args.get(i).toString()).toCharArray()[0]);
+                    }
+                }
+                i++;
+            }
+
 
             System.out.printf(format, args.toArray());
             return String.format(format, args.toArray());
@@ -1006,13 +1036,16 @@ public class Interpreter {
         // Length
         Function<HashMap<String,InterpreterDataType>,String> executeLength = (HashMap<String,InterpreterDataType> args) -> {
            
-            String target;
+            InterpreterDataType target;
             if(args.containsKey("target"))
-                target = args.get("target").value;
+                target = args.get("target");
             else
-                target = globalVariables.get("$0").value;
+                target = globalVariables.get("$0");
 
-            return Integer.toString(target.length());
+            if(target instanceof InterpreterArrayDataType array)
+                return Integer.toString(array.getArrayValue().size());
+            else
+                return Integer.toString(target.value.length());
         };
         
         functions.put("length", new BuiltInFunctionDefinitionNode("length", executeLength, List.of(
