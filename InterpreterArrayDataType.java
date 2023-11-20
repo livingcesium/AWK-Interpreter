@@ -12,6 +12,7 @@ public class InterpreterArrayDataType extends InterpreterDataType{
     }
     
     private static String stringify(HashMap<String, InterpreterDataType> array){
+        if(array.isEmpty()) return "{}";
         StringBuilder sb = new StringBuilder();
         sb.append("{");
         for (String key : array.keySet()){

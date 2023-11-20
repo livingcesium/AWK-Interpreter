@@ -972,10 +972,24 @@ public class Parser {
             if(tokens.matchAndRemove(Token.TokenType.LEFTBRACKET).isPresent()){
                 if((value = parseOperation()).isEmpty())
                     throw new AwkSyntaxException(String.format("Could not evaluate index for array, reached %s", reportPosition()));
-                
+
                 if(tokens.matchAndRemove(Token.TokenType.RIGHTBRACKET).isEmpty())
                     throw new AwkSyntaxException(String.format("Missing \"]\", Unclosed array reference? Reached %s", reportPosition()));
-                
+
+
+                Node currentDepth = value.get();
+                Optional<Node> nextValue;
+                while(tokens.matchAndRemove(Token.TokenType.LEFTBRACKET).isPresent()){
+                    if((nextValue = parseOperation()).isEmpty())
+                        throw new AwkSyntaxException(String.format("Could not evaluate index for multidimensional array, reached %s", reportPosition()));
+
+                    if(tokens.matchAndRemove(Token.TokenType.RIGHTBRACKET).isEmpty())
+                        throw new AwkSyntaxException(String.format("Missing \"]\", Unclosed array reference? Reached %s", reportPosition()));
+
+                    currentDepth.setNext(nextValue.get());
+                    currentDepth = nextValue.get();
+                }
+
                 reference = new VariableReferenceNode(nameToken.get().getValue(), value.get());
 
             } else

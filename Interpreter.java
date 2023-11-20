@@ -12,7 +12,11 @@ public class Interpreter {
         
         public LineManager(List<String> lines){
             globalVariables.put("NR", new InterpreterDataType("0"));
-            switchFile(lines);
+            globalVariables.put("FNR", new InterpreterDataType("0"));
+            if(lines.isEmpty())
+                this.lines = new LinkedList<>(List.of(""));
+            else
+                this.lines = new LinkedList<>(lines);
         }
         
         public void switchFile(List<String> newLines){
@@ -85,7 +89,6 @@ public class Interpreter {
         else 
             globalVariables.put("FILENAME", new InterpreterDataType(""));
         setDefaults();
-        setFunctions(program.getFunctions());
         if(fileArg != null)
             lineManager = new LineManager(Files.readAllLines(fileArg));
         else
@@ -104,7 +107,6 @@ public class Interpreter {
         globalVariables = new HashMap<>();
         globalVariables.put("FILENAME", new InterpreterDataType(""));
         setDefaults();
-        setFunctions(program.getFunctions());
         lineManager = new LineManager(List.of());
         this.program = program;
     }
@@ -152,6 +154,7 @@ public class Interpreter {
         
         for(BlockNode block: program.getBegin())
             evaluateBlock(block, null).rejectLoopControl("Cannot use break or continue outside of a loop, in BEGIN block");
+        lineManager.handleNextLine();
 
         do
             for(BlockNode block: program.getOther())
@@ -404,39 +407,39 @@ public class Interpreter {
         return args;
     }
     
-    private ReturnType evaluateBuiltIn(BuiltInFunctionDefinitionNode builtIn, FunctionCallNode call, HashMap<String, InterpreterDataType> locals){
+    private ReturnType evaluateBuiltIn(BuiltInFunctionDefinitionNode builtIn, FunctionCallNode call, HashMap<String, InterpreterDataType> locals) {
 
         LinkedList<Node> argumentNodes = call.getArguments();
         HashMap<String, InterpreterDataType> scope = (locals == null) ? globalVariables : locals;
         // Gather args
-        HashMap<String,InterpreterDataType> args = new HashMap<>();
+        HashMap<String, InterpreterDataType> args = new HashMap<>();
         HashMap<String, String> varToParam = new HashMap<>(); // Map variable name -> variable parameter name
         // The above map is used to change variables that are meant to be mutable
-        
+
         Iterator<Node> argNodeIterator = argumentNodes.iterator();
         Node currentNode;
-        if(builtIn.isVariadic()){
+        if (builtIn.isVariadic()) {
             int i = 1;
-            while(argNodeIterator.hasNext()){
+            while (argNodeIterator.hasNext()) {
                 currentNode = argNodeIterator.next();
                 args.put(Integer.toString(i++), getIDT(currentNode, scope));
             }
-        } else for(LinkedList<String> parameterSet : builtIn.getAcceptedParameterNames()){
-            for(String parameter : parameterSet){
-                if(!argNodeIterator.hasNext()) {
+        } else for (LinkedList<String> parameterSet : builtIn.getAcceptedParameterNames()) {
+            for (String parameter : parameterSet) {
+                if (!argNodeIterator.hasNext()) {
                     break; // This parameter set is invalid (too few arguments)
                 }
-                
+
                 currentNode = argNodeIterator.next();
-                
-                if(parameter.matches("^var.*")){
-                // For built-in functions, I made all mutable parameters start with var
-                    if(!(currentNode instanceof VariableReferenceNode variableRef))
+
+                if (parameter.matches("^var.*")) {
+                    // For built-in functions, I made all mutable parameters start with var
+                    if (!(currentNode instanceof VariableReferenceNode variableRef))
                         break; // This parameter set is invalid (non-variable passed to var parameter)
                     varToParam.put(variableRef.getName(), parameter);
-                    try{
+                    try {
                         args.put(parameter, evaluateVariableRef(variableRef, scope));
-                    } catch (AwkInterpreterException ignored){
+                    } catch (AwkInterpreterException ignored) {
                         args.put(parameter, new InterpreterDataType(""));
                         // TODO: see if the empty string breaks anything
                     }
@@ -446,27 +449,31 @@ public class Interpreter {
                     args.put(parameter, getIDT(currentNode, scope));
                 }
             }
-            
-            if(args.size() == parameterSet.size())
+
+            if (args.size() == parameterSet.size())
                 break; // We found a valid parameter set
             else {
-            // This parameter set is invalid (too many arguments, or missing variable parameter)
+                // This parameter set is invalid (too many arguments, or missing variable parameter)
                 args = new HashMap<>(); // Reset everything we collected or used ( what a waste :/ )
                 varToParam = new HashMap<>();
                 argNodeIterator = argumentNodes.iterator();
             }
         }
-        
-        if(args.isEmpty() && !builtIn.getParameterNames().isEmpty())
+
+        if (args.isEmpty() && !builtIn.getParameterNames().isEmpty())
             throw new AwkIllegalArgumentException("No valid parameter set found for built-in function %s. Double check parameter count and if there are any variable parameters expected. By %s".formatted(builtIn.getName(), call.reportPosition()));
-        
+
         // Run code
-        String output = builtIn.getExecute().apply(args);
-        
+        String output;
+        try {
+            output = builtIn.getExecute().apply(args);
+        } catch (Exception e) {
+            throw new AwkInterpreterException("Error while executing built-in function %s. By %s".formatted(builtIn.getName(), call.reportPosition()), e);
+        }
         // Update all mutable arguments
-        for(String variableName : varToParam.keySet())
+        for (String variableName : varToParam.keySet())
             scope.put(variableName, args.get(varToParam.get(variableName)));
-        
+
         return new ReturnType(output, call.reportPosition());
     }
     public InterpreterDataType getIDT(Node node, HashMap<String, InterpreterDataType> locals){
@@ -738,16 +745,25 @@ public class Interpreter {
         if((index = node.getIndex()).isPresent()){
             if(variableData instanceof InterpreterArrayDataType arrayData){
                 InterpreterDataType indexData = getIDT(index.get(), scope);
-                try{
-                    indexValue = Double.parseDouble(indexData.value) + "";
-                    String[] split = indexValue.split("\\.");
-                    if(Double.parseDouble(split[1]) == 0)
-                        indexValue = split[0]; // Truncate decimal if it's 0
-                } catch (NumberFormatException e){
-                    indexValue = indexData.value;
-                }
+                indexValue = parseIndexValue(indexData);
 
                 HashMap<String, InterpreterDataType> array = arrayData.getArrayValue();
+                if(!array.containsKey(indexValue))
+                    throw new AwkIndexOutOfBoundsException(String.format("Index %s out of bounds for array %s", indexValue, name));
+
+                Optional<Node> nextIndex = index.get().getNext();
+                while(nextIndex.isPresent()){
+                // Multi-dimensional array reference
+                    if(!(array.get(indexValue) instanceof InterpreterArrayDataType data))
+                        throw new AwkInterpreterException(String.format("Attempted to make array reference to non-array element within within array %s ", name));
+                    array = data.getArrayValue();
+                    index = nextIndex;
+                    indexData = getIDT(index.get(), scope);
+                    indexValue = parseIndexValue(indexData);
+
+                    nextIndex = index.get().getNext();
+                }
+
                 if(!array.containsKey(indexValue))
                     throw new AwkIndexOutOfBoundsException(String.format("Index %s out of bounds for array %s", indexValue, name));
 
@@ -809,15 +825,29 @@ public class Interpreter {
         // Array assignment case
             HashMap<String, InterpreterDataType> newArray;
             InterpreterDataType indexData = getIDT(indexNode.get(), locals);
+            String indexValue;
+            try{
+                // Floats with zero decimal are the same as ints, so we have to check for that
+                indexValue = Double.parseDouble(indexData.value) + "";
+                String[] split = indexValue.split("\\.");
+                if(Double.parseDouble(split[1]) == 0)
+                    indexValue = split[0]; // Truncate decimal if it's 0
+            } catch (NumberFormatException e){
+                indexValue = indexData.value;
+            }
             
             // Get the original array, or create a new one if it doesn't exist
             if(original instanceof InterpreterArrayDataType arrayData)
                 newArray = arrayData.getArrayValue();
             else newArray = new HashMap<>();
-            
-            newArray.put(indexData.value, value);
 
+
+            if(indexNode.get().getNext().isPresent())
+                newArray = handleArrayDimension(newArray, indexNode.get(), value, scope);
+            else
+                newArray.put(indexValue, value);
             scope.put(name, new InterpreterArrayDataType(newArray));
+
         } else {
         // Normal assignment case
             if(original instanceof InterpreterArrayDataType arrayData)
@@ -832,6 +862,44 @@ public class Interpreter {
         }
         else 
             return new ReturnType(value.value, false, node.reportPosition()); // Maybe refactor value.value away
+    }
+
+    public HashMap<String, InterpreterDataType> handleArrayDimension(HashMap<String, InterpreterDataType> currentArray, Node indexNode, InterpreterDataType value, HashMap<String, InterpreterDataType> scope) {
+        if (indexNode.getNext().isEmpty()) {
+            currentArray.put(parseIndexValue(getIDT(indexNode, scope)), value);
+            return currentArray;
+        }
+
+        // Process the current dimension
+        String indexValue = parseIndexValue(getIDT(indexNode, scope)); // Method to get the index value from the node
+        HashMap<String, InterpreterDataType> nextArray;
+
+        if (!currentArray.containsKey(indexValue)) {
+            nextArray = new HashMap<>();
+            currentArray.put(indexValue, new InterpreterArrayDataType(nextArray));
+        } else if (currentArray.get(indexValue) instanceof InterpreterArrayDataType data) {
+            nextArray = data.getArrayValue();
+        } else {
+            throw new AwkInterpreterException("Non-array element access");
+        }
+        nextArray = handleArrayDimension(nextArray, indexNode.getNext().get(), value, scope);
+        currentArray.put(indexValue, new InterpreterArrayDataType(nextArray));
+        // Recursive call for the next dimension
+        return currentArray;
+
+    }
+
+    private String parseIndexValue(InterpreterDataType indexData) {
+        try {
+            String indexValue = Double.toString(Double.parseDouble(indexData.value));
+            String[] split = indexValue.split("\\.");
+            if (Double.parseDouble(split[1]) == 0) {
+                return split[0]; // Truncate decimal if it's 0
+            }
+            return indexValue;
+        } catch (NumberFormatException e) {
+            return indexData.value;
+        }
     }
     
     private InterpreterDataType evaluateConstant(ConstantNode<?> node){
@@ -1150,6 +1218,9 @@ public class Interpreter {
 
 
     private static class AwkInterpreterException extends RuntimeException {
+        public AwkInterpreterException(String message, Exception cause){
+            super(message, cause);
+        }
         public AwkInterpreterException(String message){
             super(message);
         }
