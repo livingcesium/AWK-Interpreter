@@ -13,7 +13,9 @@ function func(a, b){
 }
 
 {
+    # The array stuff is just nonsense, but it shows multi-dimensional arrays working
     arr[$0][$1][$2] = "test " ++i;
-    printf "arr[%s][%s][%s] = %s\n", $0, $1, $2, arr[$0][$1][$2];
+    if(($0,$1,$2) in arr)
+        printf "arr[%s][%s][%s] = %s\n", $0, $1, $2, arr[$0][$1][$2];
     func($1, $2);
 }

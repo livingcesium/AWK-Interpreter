@@ -371,11 +371,13 @@ public class Interpreter {
             throw new AwkInterpreterException(String.format("Function %s not defined, by %s", call.getName(), call.reportPosition()));
         
         FunctionDefinitionNode func = functions.get(call.getName());
-        
-        if(func instanceof BuiltInFunctionDefinitionNode builtIn) {
-            return evaluateBuiltIn(builtIn, call, locals);
-        }
+        try {
+            if (func instanceof BuiltInFunctionDefinitionNode builtIn)
+                return evaluateBuiltIn(builtIn, call, locals);
+        } catch(AwkInterpreterException e){
+            throw new AwkInterpreterException("Error while executing built-in function %s. By %s".formatted(func.getName(), call.reportPosition()), e);
 
+        }
         HashMap<String,InterpreterDataType> scope = (locals == null) ? globalVariables : locals;
         scope.putAll(collectArgs(func.getName(), func.getParameterNames(), call, locals));
 
@@ -653,9 +655,61 @@ public class Interpreter {
                 return new InterpreterDataType(booleanAsString(!Pattern.matches(rightData.value, leftData.value)));
             }
             case IN -> {
+                if(right.get() instanceof OperationNode rightOperation && rightOperation.isOp(OperationNode.Operation.IN)){
+                // Multidimensional case
+
+
+                    if(!asBoolean(rightData.value))
+                        return new InterpreterDataType("0");
+                    InterpreterDataType indexData = getIDT(rightOperation.getLeft(), scope);
+
+
+                    InterpreterArrayDataType finalArray;
+                    if(rightOperation.getRight().get() instanceof OperationNode innerOperation && innerOperation.isOp(OperationNode.Operation.IN)) { // Guaranteed get() cause of operation type IN
+                        LinkedList<Node> indices = new LinkedList<Node>(List.of(rightOperation.getLeft())); // We need to store indices for later, starting with the inner in-operation's index.
+
+                        OperationNode currentNode = innerOperation;
+                        Optional<Node> nextNode = currentNode.getRight();
+                        do{
+                            if(nextNode.isPresent() && nextNode.get() instanceof OperationNode nextOperation && nextOperation.isOp(OperationNode.Operation.IN)){
+                                indices.add(currentNode.getLeft());
+                                currentNode = nextOperation;
+                                nextNode = currentNode.getRight();
+                            } else {
+                                indices.add(currentNode.getLeft());
+                                break;
+                            }
+                        }
+                        while (nextNode.isPresent());
+
+                        if(currentNode.getRight().isEmpty() || !((getIDT(currentNode.getRight().get(), scope) instanceof InterpreterArrayDataType array)))
+                            throw new AwkIllegalArgumentException("IN operator requires array operand");
+                        // Loop thru saved indices and unnest the array
+                        InterpreterDataType nextData = array;
+                        finalArray = array;
+                        while(!indices.isEmpty()){
+                            String indexValue = parseIndexValue(getIDT(indices.removeLast(), scope));
+                            if(!((nextData = ((InterpreterArrayDataType) nextData).getArrayValue().get(indexValue)) instanceof InterpreterArrayDataType arrayData))
+                                return new InterpreterDataType("0");
+                            finalArray = arrayData;
+                        }
+
+                        return new InterpreterDataType(booleanAsString(finalArray.getArrayValue().containsKey(parseIndexValue(leftData)) && asBoolean(rightData.value)));
+
+                    } else if(getIDT(rightOperation.getRight().get(), scope) instanceof InterpreterArrayDataType arrayData) {
+                        if (!(arrayData.getArrayValue().get(parseIndexValue(indexData)) instanceof InterpreterArrayDataType array))
+                            throw new AwkIllegalArgumentException("IN operator requires array operand");
+                        finalArray = array;
+                    } else
+                        throw new AwkIllegalArgumentException("IN operator requires array operand");
+
+                    return new InterpreterDataType(booleanAsString(finalArray.getArrayValue().containsKey(parseIndexValue(leftData)) && asBoolean(rightData.value)));
+                }
+                // Single dimensional case
                 if(!(rightData instanceof InterpreterArrayDataType array))
                     throw new AwkIllegalArgumentException("IN operator requires array operand");
-                return new InterpreterDataType(booleanAsString(array.getArrayValue().containsKey(leftData.value)));
+
+                return new InterpreterDataType(booleanAsString(array.getArrayValue().containsKey(parseIndexValue(leftData))));
             }
             case CONCATENATION -> {
                 return new InterpreterDataType(leftData.value + rightData.value);
